@@ -2702,7 +2702,7 @@ selAc = function(t){
   updB();
 };
 
-function selSol(t){
+selSol = function(t){
   gSol=t;
   ['sol-reoffer','sol-return','sol-none'].forEach(function(i){var b=document.getElementById(i);if(b)b.classList.toggle('sel',i==='sol-'+t);});
   var zr=document.getElementById('z-sol-reoffer'),zt=document.getElementById('z-sol-return');
