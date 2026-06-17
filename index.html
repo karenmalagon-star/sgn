@@ -1589,9 +1589,29 @@ function sgnGest(orderId){
   openGest(n.order_id,(n.tipo_novedad||'').replace(/'/g,''),n.client_name||'—',n.phone||'',PAIS_NOMBRE[n.country]||n.country||'','Regular',inp);
   sgnHistorial(n.order_id);
 }
+// Clasifica una gestion como solucion Dropi o registro interno (sin tocar el esquema).
+function sgnCanal(g){
+  var sp=g.solution_payload;
+  if(sp&&sp.tipo_solucion){
+    var tipo=sp.tipo_solucion==='volver_a_ofrecer'?'Volver a ofrecer':sp.tipo_solucion==='return'?'Return':'Dropi';
+    var estado=g.resolved_in_dropi===true?'aplicada':g.resolved_in_dropi===false?'rechazada':'registrada';
+    return {canal:'Dropi',tipo:tipo,estado:estado};
+  }
+  return {canal:'Interno',tipo:'Registro interno',estado:''};
+}
+function sgnCanalBadge(g){
+  var c=sgnCanal(g);
+  if(c.canal==='Dropi'){
+    var col=c.estado==='aplicada'?'var(--grn)':c.estado==='rechazada'?'var(--red)':'var(--navy)';
+    var bg=c.estado==='aplicada'?'var(--grnl)':c.estado==='rechazada'?'var(--redl)':'var(--navyl)';
+    var suf=c.estado==='aplicada'?'':' · '+c.estado;
+    return '<span style="display:inline-block;font-size:9.5px;font-weight:700;color:'+col+';background:'+bg+';border-radius:20px;padding:1px 8px;margin-top:3px">&#x1F7E2; Dropi · '+c.tipo+suf+'</span>';
+  }
+  return '<span style="display:inline-block;font-size:9.5px;font-weight:700;color:var(--t2);background:var(--sur2);border-radius:20px;padding:1px 8px;margin-top:3px">&#x26AA; Interno</span>';
+}
 async function sgnHistorial(orderId){
   var r=await SGN.client.from('gestiones')
-    .select('accion,comentario,nota_revision,motivo_devolucion,solucion_dropi,created_at,profiles(full_name)')
+    .select('accion,comentario,nota_revision,motivo_devolucion,solucion_dropi,solution_payload,resolved_in_dropi,created_at,profiles(full_name)')
     .eq('order_id',orderId).order('created_at',{ascending:false}).limit(10);
   var target=null;
   document.querySelectorAll('#mogc .mb > div').forEach(function(d){
@@ -1608,7 +1628,7 @@ async function sgnHistorial(orderId){
     var detalle=g.solucion_dropi||g.comentario||g.nota_revision||g.motivo_devolucion||'';
     var quien=(g.profiles&&g.profiles.full_name)?g.profiles.full_name:'—';
     var f=new Date(g.created_at).toLocaleString('es-CO',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'});
-    items+='<div style="display:flex;gap:8px;padding:7px 0"><div style="width:7px;height:7px;border-radius:50%;background:var(--gold);margin-top:5px;flex-shrink:0"></div><div><div style="font-size:12.5px;font-weight:500;color:var(--tx)">'+(nombres[g.accion]||g.accion)+'</div>'+(detalle?'<div style="font-size:12px;color:var(--t2);font-style:italic;margin-top:1px">'+sgnEsc(detalle)+'</div>':'')+'<div style="font-size:10.5px;color:var(--t3);margin-top:2px">'+sgnEsc(quien)+' · '+f+'</div></div></div>';
+    items+='<div style="display:flex;gap:8px;padding:7px 0"><div style="width:7px;height:7px;border-radius:50%;background:var(--gold);margin-top:5px;flex-shrink:0"></div><div><div style="font-size:12.5px;font-weight:500;color:var(--tx)">'+(nombres[g.accion]||g.accion)+'</div>'+(detalle?'<div style="font-size:12px;color:var(--t2);font-style:italic;margin-top:1px">'+sgnEsc(detalle)+'</div>':'')+'<div style="font-size:10.5px;color:var(--t3);margin-top:2px">'+sgnEsc(quien)+' · '+f+'</div>'+sgnCanalBadge(g)+'</div></div>';
   });
   target.innerHTML=lbl+items;
 }
@@ -2411,6 +2431,14 @@ async function sgnRenderAnl(){
     .select('order_id,tipo_novedad,estado_local,producto,ciudad,broker_created_at,first_synced_at')
     .eq('store_id',t.id).limit(5000);
   SGN.anlNovs=r.data||[];
+  // canal de solucion por orden (Dropi vs Interno), derivado de gestiones
+  SGN.anlCanal={};
+  var rg=await SGN.client.from('gestiones').select('order_id,solution_payload').eq('store_name',t.n).limit(8000);
+  (rg.data||[]).forEach(function(g){
+    var isDropi=!!(g.solution_payload&&g.solution_payload.tipo_solucion);
+    if(isDropi)SGN.anlCanal[g.order_id]='Dropi';
+    else if(SGN.anlCanal[g.order_id]!=='Dropi')SGN.anlCanal[g.order_id]='Interno';
+  });
   var prods=[];var ciudades=[];
   SGN.anlNovs.forEach(function(n){
     if(n.producto&&prods.indexOf(n.producto)===-1)prods.push(n.producto);
@@ -2440,6 +2468,7 @@ async function sgnRenderAnl(){
     +'<select id="anl-prod" onchange="sgnAnlApply()" '+(prods.length?'':'disabled')+' style="font-size:12px;padding:6px 10px;border:1px solid var(--bdr2);border-radius:var(--rs);background:var(--sur);color:var(--tx);font-family:inherit">'+opts(prods,prods.length?'Todos los productos':'Producto (sin datos aun)')+'</select>'
     +'<select id="anl-ciudad" onchange="sgnAnlApply()" '+(ciudades.length?'':'disabled')+' style="font-size:12px;padding:6px 10px;border:1px solid var(--bdr2);border-radius:var(--rs);background:var(--sur);color:var(--tx);font-family:inherit">'+opts(ciudades,ciudades.length?'Todas las ciudades':'Ciudad (sin datos aun)')+'</select>'
     +'<select id="anl-estado" onchange="sgnAnlApply()" style="font-size:12px;padding:6px 10px;border:1px solid var(--bdr2);border-radius:var(--rs);background:var(--sur);color:var(--tx);font-family:inherit"><option value="">Todos los estados</option><option value="pendiente">Pendientes</option><option value="en_revision">En revision</option><option value="cas_abierto">CAS</option><option value="resuelta">Resueltas por el equipo</option><option value="cerrada_broker">Cerradas en Dropi</option></select>'
+    +'<select id="anl-tiposol" onchange="sgnAnlApply()" style="font-size:12px;padding:6px 10px;border:1px solid var(--bdr2);border-radius:var(--rs);background:var(--sur);color:var(--tx);font-family:inherit"><option value="">Tipo de solucion: todas</option><option value="Dropi">&#x1F7E2; Solucion en Dropi</option><option value="Interno">&#x26AA; Registro interno</option></select>'
     +'</div></div>'
     +'<div class="sg" id="anl-stats" style="margin-bottom:14px"></div>'
     +'<div class="tc" style="margin-bottom:15px">'
@@ -2456,10 +2485,13 @@ function sgnAnlApply(){
   var prod=document.getElementById('anl-prod')?document.getElementById('anl-prod').value:'';
   var ciu=document.getElementById('anl-ciudad')?document.getElementById('anl-ciudad').value:'';
   var est=document.getElementById('anl-estado')?document.getElementById('anl-estado').value:'';
+  var ts=document.getElementById('anl-tiposol')?document.getElementById('anl-tiposol').value:'';
+  var canalMap=SGN.anlCanal||{};
   var novs=SGN.anlNovs.filter(function(n){
     if(prod&&n.producto!==prod)return false;
     if(ciu&&n.ciudad!==ciu)return false;
     if(est&&n.estado_local!==est)return false;
+    if(ts&&(canalMap[n.order_id]||'')!==ts)return false;
     return true;
   });
   var total=novs.length,act=0,res=0,cer=0,cas=0;
@@ -2605,23 +2637,29 @@ openGest = function(id,ca,cl,tel,pa,tp,inp){
     +mapsBtn
     +'<div><div style="font-size:11.5px;font-weight:500;color:var(--t2);margin-bottom:8px">Que ocurrio en esta gestion? <span style="color:var(--t3);font-weight:400">(registro interno)</span></div>'
     +'<div class="ag-grid">'
-    +'<button class="ab" id="ab-ok" onclick="selAc(\'ok\')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 014.49 13.8 19.79 19.79 0 011.43 5.23 2 2 0 013.41 3h3a2 2 0 012 1.72c.13.96.36 1.9.7 2.81a2 2 0 01-.45 2.11L7.91 10.9a16 16 0 006.29 6.29l1.06-1.06a2 2 0 012.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0122 18.19z"/></svg>Contacto con cliente'+cap('+ ELEGIR SOLUCION DROPI','var(--grn)')+'</button>'
+    +'<button class="ab" id="ab-ok" onclick="selAc(\'ok\')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 014.49 13.8 19.79 19.79 0 011.43 5.23 2 2 0 013.41 3h3a2 2 0 012 1.72c.13.96.36 1.9.7 2.81a2 2 0 01-.45 2.11L7.91 10.9a16 16 0 006.29 6.29l1.06-1.06a2 2 0 012.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0122 18.19z"/></svg>Contacto con cliente'+cap('REGISTRO INTERNO','var(--t3)')+'</button>'
     +'<button class="ab" id="ab-no" onclick="selAc(\'no\')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18"><path d="M10.68 13.31a16 16 0 003.41 2.6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7 2 2 0 011.72 2v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.34 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91"/><line x1="23" y1="1" x2="1" y2="23"/></svg>Sin contacto'+cap('REGISTRO INTERNO','var(--t3)')+'</button>'
     +'<button class="ab" id="ab-rev" onclick="selAc(\'rev\')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>En revision'+cap('REGISTRO INTERNO','var(--t3)')+'</button>'
-    +'<button class="ab" id="ab-dev" onclick="selAc(\'dev\')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>Devolver al remitente'+cap('&#x2713; RETURN EN DROPI','var(--grn)')+'</button>'
+    +'<button class="ab" id="ab-dev" onclick="selAc(\'dev\')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>Devolver al remitente'+cap('REGISTRO INTERNO','var(--t3)')+'</button>'
     +'<button class="ab" id="ab-cas" onclick="selAc(\'cas\')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>Abrir CAS'+cap('REGISTRO INTERNO','var(--t3)')+'</button>'
     +'<button class="ab" id="ab-tr" onclick="selTr()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>Solucionada por transportadora'+cap('REGISTRO INTERNO','var(--t3)')+'</button>'
     +'</div></div>'
     +'<div id="gal"></div>'
 
-    // ── CONTACTO CON CLIENTE: comentario + Solucion Dropi ──
-    +'<div id="z-ok" style="display:none">'
-    +'<div class="fld"><label>Comentario <span class="req">Obligatorio</span> <span style="font-size:10.5px;color:var(--t3);font-weight:400">(nota interna: que se hablo en la llamada)</span></label><textarea id="cm-ok" placeholder="Ej: Cliente confirma que si recibira el pedido, se aclara la direccion..." oninput="updB()"></textarea></div>'
-    +'<div style="font-size:11.5px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.04em;margin:13px 0 7px">&#x1F4E6; Solucion Dropi <span style="font-weight:400;color:var(--t3);text-transform:none;letter-spacing:0">(lo que se aplicara en Dropi)</span></div>'
+    // ── NOTAS INTERNAS (puro registro, sin Dropi) ──
+    +'<div id="z-ok" style="display:none"><div class="fld"><label>Comentario <span class="req">Obligatorio</span> <span style="font-size:10.5px;color:var(--t3);font-weight:400">(nota interna: que se hablo en la llamada)</span></label><textarea id="cm-ok" placeholder="Ej: Cliente confirma que si recibira el pedido, se aclara la direccion..." oninput="updB()"></textarea></div></div>'
+    +'<div id="z-no" style="display:none"><div class="fld"><label>Comentario <span class="req">Obligatorio</span> <span style="font-size:10.5px;color:var(--t3);font-weight:400">(nota interna del intento)</span></label><textarea id="cm-no" placeholder="Contexto del intento (no contesto, buzon, etc.)..." oninput="updB()"></textarea></div></div>'
+    +'<div id="z-rev" style="display:none"><div class="fld"><label>Motivo de revision</label><div style="display:flex;flex-direction:column;gap:5px;margin-top:5px"><button class="nbt" id="nb1" onclick="selNt(1)">&#x1F550; Cliente aun no define fecha de entrega</button><button class="nbt" id="nb2" onclick="selNt(2)">&#x1F4CD; Falta un dato de direccion</button><button class="nbt" id="nb3" onclick="selNt(3)">&#x1F464; Se espera respuesta del dropshipper</button></div></div></div>'
+    +'<div id="z-dev" style="display:none"><div class="fld"><label>Nota interna <span style="font-size:10.5px;color:var(--t3);font-weight:400">(opcional: por que se devuelve — el motivo y detalle del return van en Solucion Dropi)</span></label><textarea id="cm-dev" placeholder="Contexto para el equipo..." oninput="updB()"></textarea></div></div>'
+    +'<div id="z-cas" style="display:none"><div class="fld"><label>Descripcion del CAS <span class="req">Obligatorio</span></label><textarea id="cm-cas" placeholder="Describe el motivo del CAS..." oninput="updB()"></textarea></div></div>'
+
+    // ── SOLUCION DROPI (seccion independiente; obligatoria solo para Contacto/Sin contacto/Devolver) ──
+    +'<div id="z-soldropi" style="display:none">'
+    +'<div style="font-size:11.5px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.04em;margin:15px 0 7px;padding-top:13px;border-top:1px dashed var(--bdr2)">&#x1F4E6; Solucion Dropi <span style="font-weight:400;color:var(--t3);text-transform:none;letter-spacing:0">(obligatoria para cerrar esta novedad en Dropi)</span></div>'
     +'<div style="display:flex;flex-direction:column;gap:5px">'
     +'<button class="nbt" id="sol-reoffer" onclick="selSol(\'reoffer\')">&#x1F504; Volver a ofrecer — reprogramar la entrega con los datos confirmados</button>'
     +'<button class="nbt" id="sol-return" onclick="selSol(\'return\')">&#x21A9; Return — devolver el pedido al remitente en Dropi</button>'
-    +'<button class="nbt" id="sol-none" onclick="selSol(\'none\')">&#x1F4DD; Aun sin solucion — solo dejar el registro interno</button>'
+    +'<button class="nbt" id="sol-none" onclick="selSol(\'none\')">&#x1F4DD; Aun sin solucion — (la gestion NO se podra guardar)</button>'
     +'</div>'
     +'<div id="z-sol-reoffer" style="display:none;margin-top:11px">'
     +'<div class="fld"><label>Detalle de la solucion para Dropi <span class="req">Obligatorio</span></label><textarea id="sr-sol" placeholder="Lo que quedara en Dropi. Ej: Cliente confirma direccion y recibe, reprogramar entrega." oninput="updB()"></textarea></div>'
@@ -2633,34 +2671,32 @@ openGest = function(id,ca,cl,tel,pa,tp,inp){
     +'<div class="fld"><label>Motivo de devolucion <span class="req">Obligatorio</span></label><select id="sr-mot" onchange="updB()" style="'+inputStyle+'">'+motOpts+'</select></div>'
     +'<div class="fld" style="margin-top:9px"><label>Detalle de la solucion para Dropi <span class="req">Obligatorio</span></label><textarea id="sr-rsol" placeholder="Lo que quedara en Dropi para la devolucion..." oninput="updB()"></textarea></div>'
     +'</div>'
-    +'</div>'
-
-    +'<div id="z-no" style="display:none"><div class="fld"><label>Comentario <span class="req">Obligatorio</span></label><textarea id="cm-no" placeholder="Contexto del intento (no contesto, buzon, etc.)..." oninput="updB()"></textarea></div></div>'
-    +'<div id="z-rev" style="display:none"><div class="fld"><label>Motivo de revision</label><div style="display:flex;flex-direction:column;gap:5px;margin-top:5px"><button class="nbt" id="nb1" onclick="selNt(1)">&#x1F550; Cliente aun no define fecha de entrega</button><button class="nbt" id="nb2" onclick="selNt(2)">&#x1F4CD; Falta un dato de direccion</button><button class="nbt" id="nb3" onclick="selNt(3)">&#x1F464; Se espera respuesta del dropshipper</button></div></div></div>'
-    +'<div id="z-dev" style="display:none;flex-direction:column;gap:9px"><div class="fld"><label>Motivo de devolucion <span class="req">Obligatorio</span></label><select id="gmot" onchange="updB()" style="'+inputStyle+'">'+motOpts+'</select></div><div class="fld"><label>Detalle de la solucion para Dropi <span class="req">Obligatorio</span></label><textarea id="sd-dev" placeholder="Lo que quedara registrado en Dropi para el return..." oninput="updB()"></textarea></div><div class="fld"><label>Nota interna (opcional)</label><textarea id="cm-dev" placeholder="Contexto para el equipo..."></textarea></div></div>'
-    +'<div id="z-cas" style="display:none"><div class="fld"><label>Descripcion del CAS</label><textarea id="cm-cas" placeholder="Describe el motivo del CAS..." oninput="updB()"></textarea></div></div>'
+    +'</div>''
     +'<div><div style="font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px">Historial de gestiones</div><p style="font-size:12px;color:var(--t3);font-style:italic">Cargando historial...</p></div>'
     +'</div>'
     +'<div class="mf"><button class="btn bsm" onclick="closeMo(\'mog\')">Cancelar</button><button class="btn bp bsm" id="bguard" disabled onclick="guardar()" style="padding:6px 16px">&#x2713; Guardar gestion</button></div>';
   document.getElementById('mog').classList.add('open');
 };
 
+// Notas internas que EXIGEN una solucion aplicada en Dropi para poder guardar.
+var DROPI_REQ={ok:1,no:1,dev:1};
 selAc = function(t){
   gAc=t;gNt=null;gSol=null;
   document.querySelectorAll('.ab').forEach(function(b){b.classList.remove('sel');});
   var ab=document.getElementById('ab-'+t);if(ab)ab.classList.add('sel');
   ['ok','no','rev','dev','cas'].forEach(function(z){var e=document.getElementById('z-'+z);if(e)e.style.display='none';});
+  var zsd=document.getElementById('z-soldropi');if(zsd)zsd.style.display='none';
   ['sol-reoffer','sol-return','sol-none'].forEach(function(i){var b=document.getElementById(i);if(b)b.classList.remove('sel');});
   ['z-sol-reoffer','z-sol-return'].forEach(function(i){var e=document.getElementById(i);if(e)e.style.display='none';});
   var gal=document.getElementById('gal');if(gal)gal.innerHTML='';
   document.querySelectorAll('#z-rev .nbt').forEach(function(b){b.classList.remove('sel');});
   var map={ok:'z-ok',no:'z-no',rev:'z-rev',dev:'z-dev',cas:'z-cas'};
-  if(map[t]){var e=document.getElementById(map[t]);if(e)e.style.display=t==='dev'?'flex':'block';}
+  if(map[t]){var e=document.getElementById(map[t]);if(e)e.style.display='block';}
+  var needDropi=!!DROPI_REQ[t];
+  if(needDropi&&zsd)zsd.style.display='block';
   if(gal){
-    if(t==='ok')gal.innerHTML='<div class="al an" style="font-size:12px">Escribe la nota interna y elige la <strong>Solucion Dropi</strong>: Volver a ofrecer, Return, o solo registro.</div>';
-    if(t==='no')gal.innerHTML='<div class="al ag" style="font-size:12px">&#x26A0; Solo registro interno: suma 1 intento. <strong>No se envia nada a Dropi.</strong></div>';
-    if(t==='dev')gal.innerHTML='<div class="al an" style="font-size:12px">&#x21A9; <strong>Return directo:</strong> al guardar se devolvera el pedido en Dropi.</div>';
-    if(t==='rev')gal.innerHTML='<div class="al ag" style="font-size:12px">&#x1F550; Registro interno: la novedad queda "En revision". No se envia nada a Dropi.</div>';
+    if(needDropi)gal.innerHTML='<div class="al an" style="font-size:12px">Registro interno + <strong>Solucion Dropi obligatoria</strong> (Volver a ofrecer o Return). Sin solucion aplicada no se puede guardar.</div>';
+    if(t==='rev')gal.innerHTML='<div class="al ag" style="font-size:12px">&#x1F550; Registro interno: la novedad queda "En revision" por el tiempo del proceso. No se envia nada a Dropi.</div>';
     if(t==='cas')gal.innerHTML='<div class="al ag" style="font-size:12px">&#x1F4CB; Registro interno: se abre un CAS. No se envia nada a Dropi.</div>';
   }
   updB();
@@ -2679,16 +2715,21 @@ updB = function(){
   var b=document.getElementById('bguard');if(!b)return;
   function v(id){var e=document.getElementById(id);return e?e.value.trim():'';}
   if(!gAc){b.disabled=true;return;}
-  if(gAc==='ok'){
-    if(!v('cm-ok')||!gSol){b.disabled=true;return;}
+  // 1) requisito de la nota interna
+  var internoOk=true;
+  if(gAc==='ok')internoOk=!!v('cm-ok');
+  else if(gAc==='no')internoOk=!!v('cm-no');
+  else if(gAc==='rev')internoOk=!!gNt;
+  else if(gAc==='cas')internoOk=!!v('cm-cas');
+  // 'dev': nota interna opcional
+  if(!internoOk){b.disabled=true;return;}
+  // 2) requisito de Solucion Dropi (solo Contacto/Sin contacto/Devolver)
+  if(DROPI_REQ[gAc]){
     if(gSol==='reoffer'){b.disabled=!(v('sr-sol')&&v('sr-dir'));return;}
     if(gSol==='return'){b.disabled=!(v('sr-mot')&&v('sr-rsol'));return;}
-    b.disabled=false;return;
+    b.disabled=true;return; // 'none' o sin elegir -> no se puede guardar
   }
-  if(gAc==='no'){b.disabled=!v('cm-no');return;}
-  if(gAc==='rev'){b.disabled=!gNt;return;}
-  if(gAc==='dev'){b.disabled=!(v('gmot')&&v('sd-dev'));return;}
-  if(gAc==='cas'){b.disabled=!v('cm-cas');return;}
+  // 3) rev/cas -> solo registro interno
   b.disabled=false;
 };
 
@@ -2698,22 +2739,25 @@ guardar = async function(){
   function v(id){var e=document.getElementById(id);return e?e.value.trim():'';}
   var acMap={ok:'contacto',no:'sin_contacto',rev:'en_revision',dev:'devolucion',cas:'cas'};
   var comentario=null,nota=null,motivo=null,solucion=null,payload=null,resolver=false;
-  if(gAc==='ok'){
-    comentario=v('cm-ok');
+  // nota interna segun la tarjeta
+  if(gAc==='ok')comentario=v('cm-ok');
+  if(gAc==='no')comentario=v('cm-no');
+  if(gAc==='cas')comentario=v('cm-cas');
+  if(gAc==='dev')comentario=v('cm-dev')||null;
+  if(gAc==='rev')nota=['Cliente aun no define fecha de entrega','Falta un dato de direccion','Se espera respuesta del dropshipper'][gNt-1]||null;
+  // Solucion Dropi (campo independiente; solo Contacto/Sin contacto/Devolver la exigen)
+  if(DROPI_REQ[gAc]){
     if(gSol==='reoffer'){
       solucion=v('sr-sol');resolver=true;
       payload={solution:solucion,direccionConfirma:v('sr-dir'),nombreConfirma:v('sr-nom')||n.client_name||'',selectValueConfirma:v('sr-sv')||'1',tipo_solucion:'volver_a_ofrecer'};
     } else if(gSol==='return'){
       motivo=v('sr-mot');solucion=v('sr-rsol');resolver=true;
       payload={solution:solucion,motivo_devolucion:motivo,tipo_solucion:'return'};
+    } else {
+      // sin solucion Dropi -> no se debe guardar (la novedad sigue vigente)
+      alert('Esta gestion exige una Solucion Dropi (Volver a ofrecer o Return). Sin solucion aplicada la novedad sigue vigente y no se puede guardar.');
+      return;
     }
-  }
-  if(gAc==='no')comentario=v('cm-no');
-  if(gAc==='cas')comentario=v('cm-cas');
-  if(gAc==='rev')nota=['Cliente aun no define fecha de entrega','Falta un dato de direccion','Se espera respuesta del dropshipper'][gNt-1]||null;
-  if(gAc==='dev'){
-    motivo=v('gmot');solucion=v('sd-dev');comentario=v('cm-dev')||null;resolver=true;
-    payload={solution:solucion,motivo_devolucion:motivo,tipo_solucion:'return'};
   }
   var b=document.getElementById('bguard');
   if(b){b.disabled=true;b.textContent='Guardando...';}
@@ -2727,7 +2771,7 @@ guardar = async function(){
     });
     if(!(resolved&&resolved.ok)){
       var det=resolved&&resolved.dropi?('\n\nRespuesta de Dropi: '+JSON.stringify(resolved.dropi).slice(0,400)):'';
-      alert('No se pudo aplicar la solucion en Dropi: '+((resolved&&resolved.error)||'error')+det+'\n\nLa gestion quedara registrada internamente y la novedad sigue pendiente.');
+      alert('No se pudo aplicar la solucion en Dropi: '+((resolved&&resolved.error)||'error')+det+'\n\nLa gestion quedara registrada y la novedad sigue pendiente.');
     }
   }
 
@@ -2735,7 +2779,7 @@ guardar = async function(){
     order_id:n.order_id,store_name:n.store_name,agente_id:SGN.profile.id,
     accion:acMap[gAc],comentario:comentario,nota_revision:nota,motivo_devolucion:motivo,
     solucion_dropi:solucion,variante:n.variante,solution_payload:payload,
-    resolved_in_dropi:resolved?!!resolved.ok:null
+    resolved_in_dropi:resolver?(resolved?!!resolved.ok:null):null
   });
   if(g.error){
     alert('Error al guardar la gestion: '+g.error.message);
