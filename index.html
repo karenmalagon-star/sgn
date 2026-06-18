@@ -1587,7 +1587,7 @@ function sgnRenderTd(){
       +'<td><div class="cc"><span class="cn">'+sgnEsc(n.client_name||'—')+'</span><span class="ctel">'+sgnEsc(n.phone||'')+'</span></div></td>'
       +'<td style="font-size:11.5px;color:var(--t2)">'+sgnEsc(n.direccion_actual||'—')+'</td>'
       +'<td><div class="dots">'+dots+'</div></td>'
-      +'<td><span class="badge '+badge+'">'+estLbl+'</span></td>'
+      +'<td><span class="badge '+badge+'">'+estLbl+'</span>'+((n.assigned_to&&n.estado_local!=='resuelta')?'<div style="font-size:10px;font-weight:600;margin-top:3px;color:'+(n.assigned_to===SGN.profile.id?'var(--grn)':'var(--amb)')+'">🔒 '+(n.assigned_to===SGN.profile.id?'En gestion (tu)':'En gestion')+'</div>':'')+'</td>'
       +'<td>'+accion+'</td>'
       +'</tr>';
   });
@@ -1680,7 +1680,7 @@ guardar = async function(){
     return;
   }
   var nuevo=gAc==='rev'?'en_revision':gAc==='cas'?'cas_abierto':(gAc==='ok'||gAc==='dev')?'resuelta':'pendiente';
-  await SGN.client.from('novedades').update({intentos:(n.intentos||0)+1,estado_local:nuevo}).eq('order_id',n.order_id);
+  await SGN.client.from('novedades').update({intentos:(n.intentos||0)+1,estado_local:nuevo,assigned_to:null}).eq('order_id',n.order_id);
   n.intentos=(n.intentos||0)+1;n.estado_local=nuevo;
   sgnBuildTiendas();
   closeMo('mog');setTimeout(function(){goPage('conf');},200);
@@ -1691,7 +1691,7 @@ selTr = async function(){
   if(!confirm('⚠️ Reconfirma: ¿esta novedad fue SOLUCIONADA POR LA TRANSPORTADORA?\n\nAl aceptar se marcará como RESUELTA en el sistema. Esta accion no se deshace.\n\nCancela si no estas seguro.'))return;
   var n=SGN.curOrd;
   await SGN.client.from('gestiones').insert({order_id:n.order_id,store_name:n.store_name,agente_id:SGN.profile.id,accion:'transportadora'});
-  await SGN.client.from('novedades').update({estado_local:'resuelta',intentos:(n.intentos||0)+1}).eq('order_id',n.order_id);
+  await SGN.client.from('novedades').update({estado_local:'resuelta',intentos:(n.intentos||0)+1,assigned_to:null}).eq('order_id',n.order_id);
   n.estado_local='resuelta';n.intentos=(n.intentos||0)+1;
   sgnBuildTiendas();
   closeMo('mog');setTimeout(function(){goPage('conf');},200);
@@ -1931,7 +1931,7 @@ guardar = async function(){
     return;
   }
   var nuevo=gAc==='rev'?'en_revision':gAc==='cas'?'cas_abierto':(gAc==='ok'||gAc==='dev')?'resuelta':'pendiente';
-  await SGN.client.from('novedades').update({intentos:(n.intentos||0)+1,estado_local:nuevo}).eq('order_id',n.order_id);
+  await SGN.client.from('novedades').update({intentos:(n.intentos||0)+1,estado_local:nuevo,assigned_to:null}).eq('order_id',n.order_id);
   n.intentos=(n.intentos||0)+1;n.estado_local=nuevo;
   sgnBuildTiendas();
   closeMo('mog');setTimeout(function(){goPage('conf');},200);
@@ -2440,7 +2440,7 @@ guardar = async function(){
   }
   var resolvioOk=suf?(resolved&&resolved.ok):false;
   var nuevo=gAc==='rev'?'en_revision':gAc==='cas'?'cas_abierto':(gAc==='ok'||gAc==='dev')?(SGN.resolveEnDropi&&!resolvioOk?'pendiente':'resuelta'):'pendiente';
-  await SGN.client.from('novedades').update({intentos:(n.intentos||0)+1,estado_local:nuevo}).eq('order_id',n.order_id);
+  await SGN.client.from('novedades').update({intentos:(n.intentos||0)+1,estado_local:nuevo,assigned_to:null}).eq('order_id',n.order_id);
   n.intentos=(n.intentos||0)+1;n.estado_local=nuevo;
   sgnBuildTiendas();
   closeMo('mog');setTimeout(function(){goPage('conf');},200);
@@ -2630,7 +2630,16 @@ var gSol = null; // 'none' | 'reoffer' | 'return'
 sgnGest = function(orderId){
   var n=null;SGN.novedades.forEach(function(x){if(x.order_id===orderId)n=x;});
   if(!n)return;
+  // Bloqueo suave: si otro agente la tiene tomada, avisar antes de continuar
+  if(n.assigned_to&&n.assigned_to!==SGN.profile.id){
+    if(!confirm('🔒 Esta novedad la esta gestionando otro agente en este momento.\n\nSi continuas, quedara asignada a ti. Cancela si prefieres no interferir.'))return;
+  }
   SGN.curOrd=n;
+  // Marcar "en gestion" por este agente (bloqueo suave)
+  if(n.assigned_to!==SGN.profile.id){
+    n.assigned_to=SGN.profile.id;
+    SGN.client.from('novedades').update({assigned_to:SGN.profile.id}).eq('order_id',n.order_id).then(function(){},function(){});
+  }
   openGest(n.order_id,(n.tipo_novedad||'').replace(/'/g,''),n.client_name||'—',n.phone||'',PAIS_NOMBRE[n.country]||n.country||'','Regular',Math.min(3,(n.intentos||0)+1));
   sgnHistorial(n.order_id);
   sgnModalComment();
@@ -2813,7 +2822,7 @@ guardar = async function(){
   }
   var resolvioOk=resolver&&resolved&&resolved.ok;
   var nuevo=gAc==='rev'?'en_revision':gAc==='cas'?'cas_abierto':resolvioOk?'resuelta':'pendiente';
-  await SGN.client.from('novedades').update({intentos:(n.intentos||0)+1,estado_local:nuevo}).eq('order_id',n.order_id);
+  await SGN.client.from('novedades').update({intentos:(n.intentos||0)+1,estado_local:nuevo,assigned_to:null}).eq('order_id',n.order_id);
   n.intentos=(n.intentos||0)+1;n.estado_local=nuevo;
   sgnBuildTiendas();
   closeMo('mog');setTimeout(function(){goPage('conf');},200);
