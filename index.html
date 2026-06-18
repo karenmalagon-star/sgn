@@ -1118,7 +1118,14 @@ function updB(){
   b.disabled=false;
 }
 function guardar(){closeMo('mog');setTimeout(function(){goPage('conf');},200);}
-function copyT(){var b=document.getElementById('cbtn');b.innerHTML='&#x2713; Copiado!';setTimeout(function(){b.innerHTML='&#x1F4CB; Copiar';},2000);}
+function copyT(){
+  var el=document.getElementById('gtel');
+  var tel=el?el.textContent.replace(/\s/g,''):'';
+  var b=document.getElementById('cbtn');
+  function done(){if(b){b.innerHTML='&#x2713; Copiado!';setTimeout(function(){b.innerHTML='&#x1F4CB; Copiar';},2000);}}
+  function fb(){try{var ta=document.createElement('textarea');ta.value=tel;ta.style.position='fixed';ta.style.top='-1000px';document.body.appendChild(ta);ta.focus();ta.select();document.execCommand('copy');document.body.removeChild(ta);}catch(e){}done();}
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(tel).then(done,fb);}else{fb();}
+}
 function openWA(){var tel=document.getElementById('gtel')?document.getElementById('gtel').textContent:'';var num=tel.replace(/[^0-9]/g,'');window.open('https://wa.me/'+num,'_blank');}
 
 // ── MODAL SUPERVISOR ──
@@ -1664,6 +1671,7 @@ guardar = async function(){
 
 selTr = async function(){
   if(!SGN.curOrd)return;
+  if(!confirm('⚠️ Reconfirma: ¿esta novedad fue SOLUCIONADA POR LA TRANSPORTADORA?\n\nAl aceptar se marcará como RESUELTA en el sistema. Esta accion no se deshace.\n\nCancela si no estas seguro.'))return;
   var n=SGN.curOrd;
   await SGN.client.from('gestiones').insert({order_id:n.order_id,store_name:n.store_name,agente_id:SGN.profile.id,accion:'transportadora'});
   await SGN.client.from('novedades').update({estado_local:'resuelta',intentos:(n.intentos||0)+1}).eq('order_id',n.order_id);
