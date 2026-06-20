@@ -2801,11 +2801,12 @@ guardar = async function(){
     resolved=await sgnFn('resolve-novedad',{
       order_id:n.order_id,variante:n.variante||'C',
       solution_text:solucion||'',
+      direccion_corregida:(payload&&payload.direccionConfirma)?payload.direccionConfirma:undefined,
       solution_payload:payload
     });
     if(!(resolved&&resolved.ok)){
-      var det=resolved&&resolved.dropi?('\n\nRespuesta de Dropi: '+JSON.stringify(resolved.dropi).slice(0,400)):'';
-      alert('No se pudo aplicar la solucion en Dropi: '+((resolved&&resolved.error)||'error')+det+'\n\nLa gestion quedara registrada y la novedad sigue pendiente.');
+      var motivo=(resolved&&(resolved.reason||resolved.error))||'sin detalle';
+      alert('⚠️ Dropi NO aplico la solucion: la novedad queda PENDIENTE para gestion manual.\n\nMotivo de Dropi: '+motivo+'\n\n(La nota interna y el intento si quedan registrados.)');
     }
   }
 
