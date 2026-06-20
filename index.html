@@ -1545,14 +1545,22 @@ function sgnRenderTd(){
   var el=document.getElementById('ptd');if(!el)return;
   var t=null;TIENDAS.forEach(function(x){if(x.id===SGN.curStoreId)t=x;});
   if(!t){el.innerHTML='<div class="pt">Detalle de tienda</div><div class="ps">Selecciona una tienda desde el modulo Tiendas.</div>';return;}
-  var novs=SGN.novedades.filter(function(n){return n.store_id===t.id;});
+  var novsAll=SGN.novedades.filter(function(n){return n.store_id===t.id;});
   var nPend=0,nRev=0,nCas=0,nRes=0;
-  novs.forEach(function(n){
+  novsAll.forEach(function(n){
     if(n.estado_local==='pendiente')nPend++;
     else if(n.estado_local==='en_revision')nRev++;
     else if(n.estado_local==='cas_abierto')nCas++;
     else if(n.estado_local==='resuelta')nRes++;
   });
+  // Filtros (solo afectan la tabla; las tarjetas de arriba muestran el total de la tienda)
+  var novs=novsAll.slice();
+  var ageF=SGN.tdAge||'';
+  if(ageF){novs=novs.filter(function(n){if(!n.broker_created_at)return false;var d=Math.floor((Date.now()-new Date(n.broker_created_at).getTime())/864e5);if(ageF==='v')return d<2;if(ageF==='a')return d>=2&&d<7;if(ageF==='r')return d>=7;return true;});}
+  var estF=SGN.tdEstado||'';
+  if(estF){novs=novs.filter(function(n){return n.estado_local===estF;});}
+  var fD=SGN.tdFDesde||'',fH=SGN.tdFHasta||'';
+  if(fD||fH){novs=novs.filter(function(n){if(!n.broker_created_at)return false;var f=String(n.broker_created_at).slice(0,10);if(fD&&f<fD)return false;if(fH&&f>fH)return false;return true;});}
   var orden={pendiente:0,en_revision:1,cas_abierto:2,resuelta:3};
   novs.sort(function(a,b){
     var d=(orden[a.estado_local]||9)-(orden[b.estado_local]||9);
@@ -1599,7 +1607,16 @@ function sgnRenderTd(){
     +'<div class="sc" style="border-top:2px solid var(--navy)"><div class="sn" style="color:var(--navy)">'+nRev+'</div><div class="sl">En revision</div></div>'
     +'<div class="sc" style="border-top:2px solid var(--grn)"><div class="sn" style="color:var(--grn)">'+nRes+'</div><div class="sl">Gestionadas</div></div></div>'
     +'<div class="card">'
-    +'<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding:9px 14px;border-bottom:1px solid var(--bdr);font-size:11px;color:var(--t2)"><strong style="color:var(--t3);text-transform:uppercase;letter-spacing:.04em;font-size:10px">Antiguedad:</strong><span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--grn);margin-right:5px;vertical-align:middle"></span>menos de 2 dias</span><span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--amb);margin-right:5px;vertical-align:middle"></span>2 a 6 dias</span><span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--red);margin-right:5px;vertical-align:middle"></span>7 dias o mas</span></div>'
+    +'<div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap;padding:11px 14px;border-bottom:1px solid var(--bdr)">'
+    +'<span style="font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.04em">Filtros</span>'
+    +'<select onchange="SGN.tdEstado=this.value;sgnRenderTd()" style="font-size:11.5px;padding:5px 9px;border:1px solid var(--bdr2);border-radius:var(--rs);background:var(--sur);color:var(--tx);font-family:inherit">'+['','pendiente','resuelta','en_revision','cas_abierto'].map(function(o){var lbl={"":"Estado: todos","pendiente":"Pendiente","resuelta":"Gestionada","en_revision":"En revision","cas_abierto":"CAS"}[o];return '<option value="'+o+'"'+((SGN.tdEstado||'')===o?' selected':'')+'>'+lbl+'</option>';}).join('')+'</select>'
+    +'<label style="font-size:11px;color:var(--t2)">Fecha orden:</label>'
+    +'<input type="date" value="'+(SGN.tdFDesde||'')+'" onchange="SGN.tdFDesde=this.value;sgnRenderTd()" style="font-size:11.5px;padding:4px 8px;border:1px solid var(--bdr2);border-radius:var(--rs);background:var(--sur);color:var(--tx);font-family:inherit">'
+    +'<span style="font-size:11px;color:var(--t3)">a</span>'
+    +'<input type="date" value="'+(SGN.tdFHasta||'')+'" onchange="SGN.tdFHasta=this.value;sgnRenderTd()" style="font-size:11.5px;padding:4px 8px;border:1px solid var(--bdr2);border-radius:var(--rs);background:var(--sur);color:var(--tx);font-family:inherit">'
+    +((SGN.tdEstado||SGN.tdFDesde||SGN.tdFHasta||SGN.tdAge)?'<button class="btn bsm" style="margin-left:auto" onclick="SGN.tdEstado=\'\';SGN.tdFDesde=\'\';SGN.tdFHasta=\'\';SGN.tdAge=\'\';sgnRenderTd()">Limpiar filtros</button>':'')
+    +'</div>'
+    +'<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding:9px 14px;border-bottom:1px solid var(--bdr);font-size:11px;color:var(--t2)"><strong style="color:var(--t3);text-transform:uppercase;letter-spacing:.04em;font-size:10px">Antiguedad:</strong><span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--grn);margin-right:5px;vertical-align:middle"></span>menos de 2 dias</span><span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--amb);margin-right:5px;vertical-align:middle"></span>2 a 6 dias</span><span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--red);margin-right:5px;vertical-align:middle"></span>7 dias o mas</span>'+'<select onchange="SGN.tdAge=this.value;sgnRenderTd()" style="margin-left:auto;font-size:11px;padding:4px 9px;border:1px solid var(--bdr2);border-radius:var(--rs);background:var(--sur);color:var(--tx);font-family:inherit">'+['','v','a','r'].map(function(o){var lbl={"":"Antiguedad: todas","v":"Menos de 2 dias","a":"2 a 6 dias","r":"7 dias o mas"}[o];return '<option value="'+o+'"'+((SGN.tdAge||'')===o?' selected':'')+'>'+lbl+'</option>';}).join('')+'</select></div>'
     +'<div class="tw"><table><thead><tr><th>Orden</th><th>Causal</th><th>Fecha</th><th>Cliente</th><th>Direccion</th><th>Intentos</th><th>Estado</th><th>Accion</th></tr></thead><tbody>'+rows+'</tbody></table></div>'
     +'</div>';
 }
@@ -2254,11 +2271,63 @@ async function sgnSavePass(){
   });
 })();
 
+// ── Productividad REAL (reemplaza el demo) ──
+sgnRenderProd = async function(){
+  var el=document.getElementById('pprod');if(!el)return;
+  function iso(d){return d.toISOString().slice(0,10);}
+  if(!SGN.prodDesde){SGN.prodHasta=iso(new Date());SGN.prodDesde=iso(new Date(Date.now()-6*864e5));}
+  el.innerHTML='<div class="pt">Productividad</div><div class="ps">Rendimiento real del equipo (datos de gestiones)</div>'
+    +'<div class="fb"><div class="fr"><label>Desde</label><input type="date" id="pr-desde" value="'+SGN.prodDesde+'"><label>Hasta</label><input type="date" id="pr-hasta" value="'+SGN.prodHasta+'"><button class="btn bp bsm" onclick="sgnProdConsultar()">Consultar</button></div></div>'
+    +'<div id="pr-body"><p class="ps">Cargando metricas reales...</p></div>';
+  var pr=await SGN.client.from('profiles').select('id,full_name,role,active,metas_dia').eq('role','agente');
+  var agentes=(pr.data||[]).filter(function(a){return a.active!==false;});
+  var g=await SGN.client.from('gestiones').select('agente_id,accion,created_at').gte('created_at',SGN.prodDesde+'T00:00:00').lte('created_at',SGN.prodHasta+'T23:59:59').limit(20000);
+  var rows=g.data||[];
+  var byAg={};
+  agentes.forEach(function(a){byAg[a.id]={contacto:0,sin_contacto:0,devolucion:0,total:0};});
+  rows.forEach(function(r){
+    if(!byAg[r.agente_id])byAg[r.agente_id]={contacto:0,sin_contacto:0,devolucion:0,total:0};
+    var b=byAg[r.agente_id];b.total++;
+    if(r.accion==='contacto')b.contacto++;else if(r.accion==='sin_contacto')b.sin_contacto++;else if(r.accion==='devolucion')b.devolucion++;
+  });
+  function metaRango(metas){
+    metas=Array.isArray(metas)?metas:[280,280,280,280,280,150,0];
+    var t=0,dB=new Date(SGN.prodHasta+'T12:00:00');
+    for(var d=new Date(SGN.prodDesde+'T12:00:00');d<=dB;d.setDate(d.getDate()+1)){t+=(metas[(d.getDay()+6)%7]||0);}
+    return t;
+  }
+  var totalGest=0,enMeta=0,superaron=0,debajo=0,trs='';
+  agentes.forEach(function(a){
+    var c=byAg[a.id]||{contacto:0,sin_contacto:0,devolucion:0,total:0};
+    var target=metaRango(a.metas_dia),pct=target?Math.round(c.total/target*100):0;
+    totalGest+=c.total;
+    if(pct>100)superaron++;else if(pct>=80)enMeta++;else debajo++;
+    var col=pct>100?'var(--gold)':pct>=80?'var(--grn)':'var(--red)';
+    trs+='<tr><td><div style="display:flex;align-items:center;gap:8px"><div class="av avn">'+sgnInitials(a.full_name||'?')+'</div><span style="font-size:12.5px;font-weight:500">'+sgnEsc(a.full_name||'—')+'</span></div></td>'
+      +'<td><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;height:6px;background:var(--sur2);border-radius:3px;overflow:hidden;max-width:150px"><div style="height:100%;width:'+Math.min(100,pct)+'%;background:'+col+'"></div></div><span style="font-size:12px;color:'+col+';font-weight:600">'+pct+'%</span></div></td>'
+      +'<td>'+c.contacto+'</td><td>'+c.sin_contacto+'</td><td>'+c.devolucion+'</td><td><strong>'+c.total+'</strong></td></tr>';
+  });
+  if(!trs)trs='<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--t3);font-size:13px">No hay agentes activos o no hay gestiones en este periodo.</td></tr>';
+  var body=document.getElementById('pr-body');if(!body)return;
+  body.innerHTML=
+    '<div class="sg" style="margin-bottom:16px"><div class="sc"><div class="sn">'+totalGest+'</div><div class="sl">Gestiones en periodo</div></div>'
+    +'<div class="sc" style="border-top:2px solid var(--grn)"><div class="sn" style="color:var(--grn)">'+enMeta+'</div><div class="sl">En meta</div></div>'
+    +'<div class="sc" style="border-top:2px solid var(--gold)"><div class="sn" style="color:var(--gold)">'+superaron+'</div><div class="sl">Superaron meta</div></div>'
+    +'<div class="sc" style="border-top:2px solid var(--red)"><div class="sn" style="color:var(--red)">'+debajo+'</div><div class="sl">Por debajo</div></div></div>'
+    +'<div class="card"><div class="tw"><table><thead><tr><th>Agente</th><th>Progreso</th><th>Contacto</th><th>Sin contacto</th><th>Devolucion</th><th>Total</th></tr></thead><tbody>'+trs+'</tbody></table></div></div>';
+};
+sgnProdConsultar = function(){
+  var d=document.getElementById('pr-desde'),h=document.getElementById('pr-hasta');
+  if(d&&d.value)SGN.prodDesde=d.value;if(h&&h.value)SGN.prodHasta=h.value;
+  sgnRenderProd();
+};
+
 // ── router v3 ──
 renderPg = function(pg){
   if(pg==='td'){sgnRenderTd();sgnTdComments();return;}
   if(pg==='rend'){sgnRenderRend();return;}
   if(pg==='anl'){sgnRenderAnl();return;}
+  if(pg==='prod'){sgnRenderProd();return;}
   if(pg==='tiendas'){
     sgnRenderBase('tiendas');
     sgnInjectBusqueda();
