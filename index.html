@@ -2283,12 +2283,14 @@ sgnRenderProd = async function(){
   var agentes=(pr.data||[]).filter(function(a){return a.active!==false;});
   var g=await SGN.client.from('gestiones').select('agente_id,accion,created_at').gte('created_at',SGN.prodDesde+'T00:00:00').lte('created_at',SGN.prodHasta+'T23:59:59').limit(20000);
   var rows=g.data||[];
-  var byAg={};
-  agentes.forEach(function(a){byAg[a.id]={contacto:0,sin_contacto:0,devolucion:0,total:0};});
+  var TIPOS=['contacto','sin_contacto','devolucion','cas','transportadora','en_revision'];
+  function nuevo(){var o={total:0};TIPOS.forEach(function(t){o[t]=0;});return o;}
+  var byAg={},gen=nuevo();
+  agentes.forEach(function(a){byAg[a.id]=nuevo();});
   rows.forEach(function(r){
-    if(!byAg[r.agente_id])byAg[r.agente_id]={contacto:0,sin_contacto:0,devolucion:0,total:0};
-    var b=byAg[r.agente_id];b.total++;
-    if(r.accion==='contacto')b.contacto++;else if(r.accion==='sin_contacto')b.sin_contacto++;else if(r.accion==='devolucion')b.devolucion++;
+    if(!byAg[r.agente_id])byAg[r.agente_id]=nuevo();
+    var b=byAg[r.agente_id];b.total++;gen.total++;
+    if(TIPOS.indexOf(r.accion)>-1){b[r.accion]++;gen[r.accion]++;}
   });
   function metaRango(metas){
     metas=Array.isArray(metas)?metas:[280,280,280,280,280,150,0];
@@ -2298,28 +2300,66 @@ sgnRenderProd = async function(){
   }
   var totalGest=0,enMeta=0,superaron=0,debajo=0,trs='';
   agentes.forEach(function(a){
-    var c=byAg[a.id]||{contacto:0,sin_contacto:0,devolucion:0,total:0};
+    var c=byAg[a.id]||nuevo();
     var target=metaRango(a.metas_dia),pct=target?Math.round(c.total/target*100):0;
     totalGest+=c.total;
     if(pct>100)superaron++;else if(pct>=80)enMeta++;else debajo++;
     var col=pct>100?'var(--gold)':pct>=80?'var(--grn)':'var(--red)';
     trs+='<tr><td><div style="display:flex;align-items:center;gap:8px"><div class="av avn">'+sgnInitials(a.full_name||'?')+'</div><span style="font-size:12.5px;font-weight:500">'+sgnEsc(a.full_name||'—')+'</span></div></td>'
-      +'<td><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;height:6px;background:var(--sur2);border-radius:3px;overflow:hidden;max-width:150px"><div style="height:100%;width:'+Math.min(100,pct)+'%;background:'+col+'"></div></div><span style="font-size:12px;color:'+col+';font-weight:600">'+pct+'%</span></div></td>'
-      +'<td>'+c.contacto+'</td><td>'+c.sin_contacto+'</td><td>'+c.devolucion+'</td><td><strong>'+c.total+'</strong></td></tr>';
+      +'<td><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;height:6px;background:var(--sur2);border-radius:3px;overflow:hidden;max-width:110px"><div style="height:100%;width:'+Math.min(100,pct)+'%;background:'+col+'"></div></div><span style="font-size:12px;color:'+col+';font-weight:600">'+pct+'%</span></div></td>'
+      +'<td>'+c.contacto+'</td><td>'+c.sin_contacto+'</td><td>'+c.devolucion+'</td><td>'+c.cas+'</td><td>'+c.transportadora+'</td><td>'+c.en_revision+'</td><td><strong>'+c.total+'</strong></td></tr>';
   });
-  if(!trs)trs='<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--t3);font-size:13px">No hay agentes activos o no hay gestiones en este periodo.</td></tr>';
+  if(!trs)trs='<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--t3);font-size:13px">No hay agentes activos o no hay gestiones en este periodo.</td></tr>';
   var body=document.getElementById('pr-body');if(!body)return;
   body.innerHTML=
     '<div class="sg" style="margin-bottom:16px"><div class="sc"><div class="sn">'+totalGest+'</div><div class="sl">Gestiones en periodo</div></div>'
     +'<div class="sc" style="border-top:2px solid var(--grn)"><div class="sn" style="color:var(--grn)">'+enMeta+'</div><div class="sl">En meta</div></div>'
     +'<div class="sc" style="border-top:2px solid var(--gold)"><div class="sn" style="color:var(--gold)">'+superaron+'</div><div class="sl">Superaron meta</div></div>'
     +'<div class="sc" style="border-top:2px solid var(--red)"><div class="sn" style="color:var(--red)">'+debajo+'</div><div class="sl">Por debajo</div></div></div>'
-    +'<div class="card"><div class="tw"><table><thead><tr><th>Agente</th><th>Progreso</th><th>Contacto</th><th>Sin contacto</th><th>Devolucion</th><th>Total</th></tr></thead><tbody>'+trs+'</tbody></table></div></div>';
+    +'<div class="card cb" style="margin-bottom:14px"><div style="font-size:13px;font-weight:600;color:var(--tx);margin-bottom:11px;padding-bottom:9px;border-bottom:1px solid var(--bdr)">Gestiones por tipo (general)</div>'
+    +'<div style="display:flex;gap:10px;flex-wrap:wrap">'
+    +[['contacto','Contacto'],['sin_contacto','Sin contacto'],['devolucion','Devolver'],['cas','CAS'],['transportadora','Transportadora'],['en_revision','En revision']].map(function(p){var v=gen[p[0]],pc=gen.total?Math.round(v/gen.total*100):0;return '<div style="flex:1;min-width:115px;background:var(--sur2);border-radius:var(--rs);padding:10px 12px"><div style="font-size:18px;font-weight:700;color:var(--tx)">'+v+'</div><div style="font-size:11px;color:var(--t2)">'+p[1]+' <span style="color:var(--t3)">('+pc+'%)</span></div></div>';}).join('')
+    +'</div></div>'
+    +'<div class="card"><div class="tw"><table><thead><tr><th>Agente</th><th>Progreso</th><th>Contacto</th><th>Sin contacto</th><th>Devolver</th><th>CAS</th><th>Transp.</th><th>En revision</th><th>Total</th></tr></thead><tbody>'+trs+'</tbody></table></div></div>';
 };
 sgnProdConsultar = function(){
   var d=document.getElementById('pr-desde'),h=document.getElementById('pr-hasta');
   if(d&&d.value)SGN.prodDesde=d.value;if(h&&h.value)SGN.prodHasta=h.value;
   sgnRenderProd();
+};
+
+// ── Calendario REAL (reemplaza el demo) ──
+sgnRenderCal = async function(){
+  var el=document.getElementById('pcal');if(!el)return;
+  el.innerHTML='<div class="pt">&#x1F4C5; Calendario</div><div class="ps">Resumen real de novedades y gestiones</div><div id="cal-body"><p class="ps">Cargando datos reales...</p></div>';
+  var nv=await SGN.client.from('novedades').select('store_name,estado_local,broker_created_at').in('estado_local',['pendiente','en_revision','cas_abierto']).limit(8000);
+  var novs=nv.data||[];var now=Date.now();
+  var v=0,a=0,r=0,byStore7={};
+  novs.forEach(function(n){
+    var d=n.broker_created_at?Math.floor((now-new Date(n.broker_created_at).getTime())/864e5):0;
+    if(d>=7){r++;byStore7[n.store_name]=(byStore7[n.store_name]||0)+1;}else if(d>=2)a++;else v++;
+  });
+  var top=Object.keys(byStore7).map(function(k){return [k,byStore7[k]];}).sort(function(x,y){return y[1]-x[1];}).slice(0,10);
+  function iso(d){return d.toISOString().slice(0,10);}
+  var desde=iso(new Date(now-6*864e5));
+  var g=await SGN.client.from('gestiones').select('created_at').gte('created_at',desde+'T00:00:00').limit(20000);
+  var perDay={};(g.data||[]).forEach(function(x){var k=String(x.created_at||'').slice(0,10);perDay[k]=(perDay[k]||0)+1;});
+  var dias=[];for(var i=6;i>=0;i--){dias.push(iso(new Date(now-i*864e5)));}
+  var maxd=1;dias.forEach(function(k){if((perDay[k]||0)>maxd)maxd=perDay[k];});
+  var dow=['Dom','Lun','Mar','Mie','Jue','Vie','Sab'];
+  var barras=dias.map(function(k){
+    var val=perDay[k]||0,h=Math.round(val/maxd*70)+2,dt=new Date(k+'T12:00:00');
+    return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px"><div style="font-size:11px;font-weight:600;color:var(--tx)">'+val+'</div><div style="width:60%;max-width:36px;height:'+h+'px;background:var(--navy);border-radius:3px 3px 0 0"></div><div style="font-size:10px;color:var(--t3)">'+dow[dt.getDay()]+' '+dt.getDate()+'</div></div>';
+  }).join('');
+  var topRows=top.length?top.map(function(t){return '<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--bdr)"><span style="font-size:12.5px;color:var(--tx)">'+sgnEsc(t[0])+'</span><span class="badge br">'+t[1]+' con 7+ dias</span></div>';}).join(''):'<p style="font-size:12px;color:var(--t3);font-style:italic;padding:6px 0">Ninguna tienda con novedades de 7+ dias. &#x1F389;</p>';
+  var body=document.getElementById('cal-body');if(!body)return;
+  body.innerHTML=
+    '<div class="sg" style="margin-bottom:14px"><div class="sc"><div class="sn">'+novs.length+'</div><div class="sl">Activas</div></div>'
+    +'<div class="sc" style="border-top:2px solid var(--grn)"><div class="sn" style="color:var(--grn)">'+v+'</div><div class="sl">Menos de 2 dias</div></div>'
+    +'<div class="sc" style="border-top:2px solid var(--amb)"><div class="sn" style="color:var(--amb)">'+a+'</div><div class="sl">2 a 6 dias</div></div>'
+    +'<div class="sc" style="border-top:2px solid var(--red)"><div class="sn" style="color:var(--red)">'+r+'</div><div class="sl">7 dias o mas</div></div></div>'
+    +'<div class="card cb" style="margin-bottom:14px"><div style="font-size:13px;font-weight:600;color:var(--tx);margin-bottom:12px;padding-bottom:9px;border-bottom:1px solid var(--bdr)">Gestiones de los ultimos 7 dias</div><div style="display:flex;align-items:flex-end;gap:6px;height:110px">'+barras+'</div></div>'
+    +'<div class="card cb"><div style="font-size:13px;font-weight:600;color:var(--tx);margin-bottom:6px;padding-bottom:9px;border-bottom:1px solid var(--bdr)">&#x26A0; Tiendas con novedades sin gestionar (7+ dias)</div>'+topRows+'</div>';
 };
 
 // ── router v3 ──
@@ -2328,6 +2368,7 @@ renderPg = function(pg){
   if(pg==='rend'){sgnRenderRend();return;}
   if(pg==='anl'){sgnRenderAnl();return;}
   if(pg==='prod'){sgnRenderProd();return;}
+  if(pg==='cal'){sgnRenderCal();return;}
   if(pg==='tiendas'){
     sgnRenderBase('tiendas');
     sgnInjectBusqueda();
