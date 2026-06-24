@@ -2373,7 +2373,7 @@ sgnMetricasAgente = function(agentes,rows,novMap){
 };
 
 sgnMetricasTienda = function(rows,novList,novMap){
-  function nuevoT(){return {gest:0,tmrSum:0,tmrN:0,dropiOk:0,dropiN:0,orders:{},reincOrders:{},activas:0};}
+  function nuevoT(){return {gest:0,tmrSum:0,tmrN:0,dropiOk:0,dropiN:0,orders:{},activas:0,i1:0,i2:0,i3:0};}
   var st={};
   rows.forEach(function(r){
     var sn=r.store_name||'—';if(!st[sn])st[sn]=nuevoT();var b=st[sn];
@@ -2381,29 +2381,43 @@ sgnMetricasTienda = function(rows,novList,novMap){
     var n=novMap[oid];
     if(n&&n.broker_created_at){var dt=(new Date(r.created_at)-new Date(n.broker_created_at))/36e5;if(dt>=0&&dt<24*120){b.tmrSum+=dt;b.tmrN++;}}
     if(r.resolved_in_dropi===true||r.resolved_in_dropi===false){b.dropiN++;if(r.resolved_in_dropi===true)b.dropiOk++;}
-    if(n&&(n.intentos||0)>=2&&oid)b.reincOrders[oid]=1;
   });
   novList.forEach(function(n){if(['pendiente','en_revision','cas_abierto'].indexOf(n.estado_local)>-1){var sn=n.store_name||'—';if(!st[sn])st[sn]=nuevoT();st[sn].activas++;}});
-  var arr=Object.keys(st).map(function(k){return [k,st[k]];}).filter(function(x){return x[1].gest>0||x[1].activas>0;});
-  arr.sort(function(a,b){return b[1].gest-a[1].gest;});
-  var totGest=0,totAct=0,gTmrSum=0,gTmrN=0,gOk=0,gN=0;
+  // Reincidencia: clasifica cada orden distinta tocada segun # de intentos
+  Object.keys(st).forEach(function(sn){var b=st[sn];Object.keys(b.orders).forEach(function(oid){var n=novMap[oid];var it=n?(n.intentos||0):0;if(it<=1)b.i1++;else if(it===2)b.i2++;else b.i3++;});});
+  function reincCell(part,total,inv){if(!total)return '<td style="color:var(--t3)">—</td>';var p=Math.round(part/total*100);var bueno=inv?(p<=20):(p>=70),medio=inv?(p<=40):(p>=50);var c=bueno?'var(--grn)':medio?'var(--gold)':'var(--red)';return '<td style="color:'+c+';font-weight:600">'+p+'%<span style="color:var(--t3);font-weight:400;font-size:10px"> ('+part+')</span></td>';}
+  function pctTxt(part,tot){return tot?Math.round(part/tot*100)+'%':'—';}
+
+  var selT=SGN.metricasTienda||'';
+  var arrAll=Object.keys(st).map(function(k){return [k,st[k]];}).filter(function(x){return x[1].gest>0||x[1].activas>0;});
+  arrAll.sort(function(a,b){return b[1].gest-a[1].gest;});
+  var arr=selT?arrAll.filter(function(x){return x[0]===selT;}):arrAll;
+
+  var totGest=0,totAct=0,gTmrSum=0,gTmrN=0,gOk=0,gN=0,gi1=0,gi2=0,gi3=0;
   var trs=arr.map(function(x){
-    var b=x[1];totGest+=b.gest;totAct+=b.activas;gTmrSum+=b.tmrSum;gTmrN+=b.tmrN;gOk+=b.dropiOk;gN+=b.dropiN;
+    var b=x[1];totGest+=b.gest;totAct+=b.activas;gTmrSum+=b.tmrSum;gTmrN+=b.tmrN;gOk+=b.dropiOk;gN+=b.dropiN;gi1+=b.i1;gi2+=b.i2;gi3+=b.i3;
+    var tot=b.i1+b.i2+b.i3;
     return '<tr><td style="font-size:12.5px;font-weight:500">'+sgnEsc(x[0])+'</td>'
       +'<td>'+b.activas+'</td><td><strong>'+b.gest+'</strong></td>'
-      +'<td>'+sgnTmrFmt(b)+'</td>'+sgnPctCell(sgnPctDropi(b),false)+sgnPctCell(sgnPctReinc(b),true)+'</tr>';
+      +'<td>'+sgnTmrFmt(b)+'</td>'+sgnPctCell(sgnPctDropi(b),false)
+      +reincCell(b.i1,tot,false)+reincCell(b.i2,tot,true)+reincCell(b.i3,tot,true)+'</tr>';
   }).join('');
-  if(!trs)trs='<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--t3);font-size:13px">No hay gestiones ni novedades activas en este periodo.</td></tr>';
+  if(!trs)trs='<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--t3);font-size:13px">No hay gestiones ni novedades activas en este periodo.</td></tr>';
   var gTmr=sgnTmrFmt({tmrSum:gTmrSum,tmrN:gTmrN});
   var gPct=gN?Math.round(gOk/gN*100):null;
+  var gTot=gi1+gi2+gi3;
   var body=document.getElementById('pr-body');if(!body)return;
   body.innerHTML=
-    '<div class="sg" style="margin-bottom:16px"><div class="sc"><div class="sn">'+arr.length+'</div><div class="sl">Tiendas con actividad</div></div>'
+    '<div style="margin-bottom:12px"><label style="font-size:11px;font-weight:600;color:var(--t2);margin-right:6px">Tienda:</label><select onchange="SGN.metricasTienda=this.value;sgnRenderProd()" style="font-size:12px;padding:5px 10px;border:1px solid var(--bdr2);border-radius:var(--rs);background:var(--sur);color:var(--tx);font-family:inherit;max-width:280px"><option value="">Todas las tiendas</option>'+arrAll.map(function(x){return '<option value="'+sgnEsc(x[0])+'"'+(selT===x[0]?' selected':'')+'>'+sgnEsc(x[0])+'</option>';}).join('')+'</select></div>'
+    +'<div class="sg" style="margin-bottom:14px"><div class="sc"><div class="sn">'+(selT?'1':arr.length)+'</div><div class="sl">'+(selT?'Tienda seleccionada':'Tiendas con actividad')+'</div></div>'
     +'<div class="sc"><div class="sn">'+totGest+'</div><div class="sl">Gestiones en periodo</div></div>'
-    +'<div class="sc" style="border-top:2px solid var(--navy)"><div class="sn">'+gTmr+'</div><div class="sl">TMR global</div></div>'
+    +'<div class="sc" style="border-top:2px solid var(--navy)"><div class="sn">'+gTmr+'</div><div class="sl">TMR'+(selT?'':' global')+'</div></div>'
     +'<div class="sc" style="border-top:2px solid var(--grn)"><div class="sn" style="color:var(--grn)">'+(gPct===null?'—':gPct+'%')+'</div><div class="sl">Resuelto en Dropi (1er)</div></div></div>'
-    +'<div class="card"><div class="tw"><table><thead><tr><th>Tienda</th><th>Activas</th><th>Gestiones</th><th>TMR</th><th>% Dropi 1er</th><th>% Reinc.</th></tr></thead><tbody>'+trs+'</tbody></table></div></div>'
-    +'<p class="ps" style="margin-top:8px;font-size:11px">Activas: novedades pendientes/en revision/CAS &middot; TMR: tiempo medio desde aparicion hasta gestion &middot; % Dropi 1er: efectividad del resolve &middot; % Reinc.: ordenes con 2+ intentos (senal de tienda problematica).</p>';
+    +'<div class="sg" style="margin-bottom:16px"><div class="sc" style="border-top:2px solid var(--grn)"><div class="sn" style="color:var(--grn)">'+pctTxt(gi1,gTot)+'</div><div class="sl">Resueltas a la 1era ('+gi1+')</div></div>'
+    +'<div class="sc" style="border-top:2px solid var(--gold)"><div class="sn" style="color:var(--gold)">'+pctTxt(gi2,gTot)+'</div><div class="sl">Reincidio 2da vez ('+gi2+')</div></div>'
+    +'<div class="sc" style="border-top:2px solid var(--red)"><div class="sn" style="color:var(--red)">'+pctTxt(gi3,gTot)+'</div><div class="sl">Reincidio 3era+ vez ('+gi3+')</div></div></div>'
+    +'<div class="card"><div class="tw"><table><thead><tr><th>Tienda</th><th>Activas</th><th>Gestiones</th><th>TMR</th><th>% Dropi 1er</th><th>1era vez</th><th>2da vez</th><th>3era+ vez</th></tr></thead><tbody>'+trs+'</tbody></table></div></div>'
+    +'<p class="ps" style="margin-top:8px;font-size:11px">Reincidencia por ordenes distintas tocadas: 1era vez = resuelta al primer intento &middot; 2da vez = volvio una vez (2 intentos) &middot; 3era+ = volvio 2 o mas veces (3+ intentos). Entre parentesis, # de ordenes.</p>';
 };
 sgnProdConsultar = function(){
   var d=document.getElementById('pr-desde'),h=document.getElementById('pr-hasta');
@@ -3016,53 +3030,4 @@ guardar = async function(){
       payload={tipo_solucion:'opcion',opcion:gOpcion,label:gOpcionLabel,solution:solucion,direccion_corregida:v('opc-dir')||undefined};
     } else if(gSol==='reoffer'){
       solucion=v('sr-sol');resolver=true;
-      payload={solution:solucion,direccionConfirma:v('sr-dir'),nombreConfirma:v('sr-nom')||n.client_name||'',selectValueConfirma:v('sr-sv')||'1',tipo_solucion:'volver_a_ofrecer'};
-    } else if(gSol==='return'){
-      motivo=v('sr-mot');solucion=v('sr-rsol');resolver=true;
-      payload={solution:solucion,motivo_devolucion:motivo,tipo_solucion:'return'};
-    } else {
-      // sin solucion Dropi -> no se debe guardar (la novedad sigue vigente)
-      alert('Esta gestion exige una Solucion Dropi. Elige una opcion real de Dropi (recomendado) o una opcion manual.');
-      return;
-    }
-  }
-  var b=document.getElementById('bguard');
-  if(b){b.disabled=true;b.textContent='Guardando...';}
-
-  var resolved=null;
-  if(SGN.resolveEnDropi&&resolver){
-    resolved=await sgnFn('resolve-novedad',{
-      order_id:n.order_id,variante:n.variante||'C',
-      opcion:(payload&&payload.opcion)?payload.opcion:undefined,
-      solution_text:solucion||'',
-      direccion_corregida:(payload&&(payload.direccion_corregida||payload.direccionConfirma))||undefined,
-      solution_payload:payload
-    });
-    if(!(resolved&&resolved.ok)){
-      var motivo=(resolved&&(resolved.reason||resolved.error))||'sin detalle';
-      alert('⚠️ Dropi NO aplico la solucion: la novedad queda PENDIENTE para gestion manual.\n\nMotivo de Dropi: '+motivo+'\n\n(La nota interna y el intento si quedan registrados.)');
-    }
-  }
-
-  var g=await SGN.client.from('gestiones').insert({
-    order_id:n.order_id,store_name:n.store_name,agente_id:SGN.profile.id,
-    accion:acMap[gAc],comentario:comentario,nota_revision:nota,motivo_devolucion:motivo,
-    solucion_dropi:solucion,variante:n.variante,solution_payload:payload,
-    resolved_in_dropi:resolver?(resolved?!!resolved.ok:null):null
-  });
-  if(g.error){
-    alert('Error al guardar la gestion: '+g.error.message);
-    if(b){b.disabled=false;b.innerHTML='&#x2713; Guardar gestion';}
-    return;
-  }
-  var resolvioOk=resolver&&resolved&&resolved.ok;
-  var nuevo=gAc==='rev'?'en_revision':gAc==='cas'?'cas_abierto':resolvioOk?'resuelta':'pendiente';
-  await SGN.client.from('novedades').update({intentos:(n.intentos||0)+1,estado_local:nuevo,assigned_to:null}).eq('order_id',n.order_id);
-  n.intentos=(n.intentos||0)+1;n.estado_local=nuevo;
-  sgnBuildTiendas();
-  closeMo('mog');setTimeout(function(){goPage('conf');},200);
-};
-
-</script>
-</body>
-</html>
+      payload={solution:solucion,direccionConfirma:v('sr-dir'),nombreConfirma:v('sr-nom')||n.client_name||'',selectValueConfirma:v('sr-sv')||'1',tipo_solucion:'volver_a_of
