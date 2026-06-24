@@ -1999,6 +1999,9 @@ function sgnRenderUsuarios(){
     var delBtn=sgnPuedeEliminar(u)
       ?'<button class="btn br2 bsm" onclick="sgnUserDel(\''+u.id+'\')">Eliminar</button>'
       :'<button class="btn br2 bsm" disabled style="opacity:.4;cursor:not-allowed" title="'+(u.id===SGN.profile.id?'No puedes eliminarte a ti mismo':'Solo el admin puede eliminar supervisores')+'">Eliminar</button>';
+    var togBtn=sgnPuedeEliminar(u)
+      ?'<button class="btn '+(u.active?'bgo':'bg')+' bsm" onclick="sgnUserToggle(\''+u.id+'\')">'+(u.active?'Inhabilitar':'Habilitar')+'</button>'
+      :'';
     rows+='<tr style="'+(u.active?'':'opacity:.5')+'">'
       +'<td><div style="display:flex;align-items:center;gap:8px"><div class="av '+(u.role==='agente'?'avn':'avg')+'">'+sgnInitials(u.full_name)+'</div>'
       +'<div><div style="font-size:13px;font-weight:500;color:var(--tx)">'+sgnEsc(u.full_name)+'</div>'
@@ -2007,7 +2010,7 @@ function sgnRenderUsuarios(){
       +'<td><span class="badge '+(u.active?'bgn':'bgr')+'">'+(u.active?'Activo':'Inactivo')+'</span></td>'
       +'<td style="font-family:monospace;font-size:12px">'+metaCell+'</td>'
       +'<td style="font-size:12.5px;color:var(--t2)">'+f+'</td>'
-      +'<td><div class="acts">'+edBtn+delBtn+'</div></td></tr>';
+      +'<td><div class="acts">'+edBtn+togBtn+delBtn+'</div></td></tr>';
   });
   tbody.innerHTML=rows||'<tr><td colspan="6" style="text-align:center;padding:22px;color:var(--t3);font-size:13px">No hay usuarios que coincidan.</td></tr>';
   var checks=document.getElementById('masiva-checks');
@@ -2114,6 +2117,16 @@ async function sgnUserDelOk(id){
   closeMo('moag');
   if(!r.ok)alert('No se pudo eliminar: '+(r.error||'error desconocido'));
   else if(r.deactivated)alert(r.note||'El usuario tenia historial: se desactivo en lugar de eliminarse.');
+  sgnLoadUsuarios();
+}
+
+async function sgnUserToggle(id){
+  var u=null;SGN.users.forEach(function(x){if(x.id===id)u=x;});
+  if(!u)return;
+  var acc=u.active?'inhabilitar':'habilitar';
+  if(!confirm('¿Seguro que deseas '+acc+' a '+(u.full_name||'')+'?'+(u.active?'\n\nNo podra iniciar sesion, pero su historial de gestiones se conserva.':'\n\nPodra volver a iniciar sesion.')))return;
+  var r=await SGN.client.from('profiles').update({active:!u.active}).eq('id',id);
+  if(r.error){alert('No se pudo actualizar: '+r.error.message);return;}
   sgnLoadUsuarios();
 }
 
@@ -2298,8 +2311,11 @@ sgnRenderProd = async function(){
     for(var d=new Date(SGN.prodDesde+'T12:00:00');d<=dB;d.setDate(d.getDate()+1)){t+=(metas[(d.getDay()+6)%7]||0);}
     return t;
   }
+  var selAg=SGN.prodAgente||'';
+  var agentesMostrar=selAg?agentes.filter(function(a){return a.id===selAg;}):agentes;
+  var genShow=selAg?(byAg[selAg]||nuevo()):gen;
   var totalGest=0,enMeta=0,superaron=0,debajo=0,trs='';
-  agentes.forEach(function(a){
+  agentesMostrar.forEach(function(a){
     var c=byAg[a.id]||nuevo();
     var target=metaRango(a.metas_dia),pct=target?Math.round(c.total/target*100):0;
     totalGest+=c.total;
@@ -2312,13 +2328,14 @@ sgnRenderProd = async function(){
   if(!trs)trs='<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--t3);font-size:13px">No hay agentes activos o no hay gestiones en este periodo.</td></tr>';
   var body=document.getElementById('pr-body');if(!body)return;
   body.innerHTML=
-    '<div class="sg" style="margin-bottom:16px"><div class="sc"><div class="sn">'+totalGest+'</div><div class="sl">Gestiones en periodo</div></div>'
+    '<div style="margin-bottom:12px"><label style="font-size:11px;font-weight:600;color:var(--t2);margin-right:6px">Agente:</label><select onchange="SGN.prodAgente=this.value;sgnRenderProd()" style="font-size:12px;padding:5px 10px;border:1px solid var(--bdr2);border-radius:var(--rs);background:var(--sur);color:var(--tx);font-family:inherit"><option value="">Todos los agentes</option>'+agentes.map(function(a){return '<option value="'+a.id+'"'+(selAg===a.id?' selected':'')+'>'+sgnEsc(a.full_name||a.id)+'</option>';}).join('')+'</select></div>'
+    +'<div class="sg" style="margin-bottom:16px"><div class="sc"><div class="sn">'+totalGest+'</div><div class="sl">Gestiones en periodo</div></div>'
     +'<div class="sc" style="border-top:2px solid var(--grn)"><div class="sn" style="color:var(--grn)">'+enMeta+'</div><div class="sl">En meta</div></div>'
     +'<div class="sc" style="border-top:2px solid var(--gold)"><div class="sn" style="color:var(--gold)">'+superaron+'</div><div class="sl">Superaron meta</div></div>'
     +'<div class="sc" style="border-top:2px solid var(--red)"><div class="sn" style="color:var(--red)">'+debajo+'</div><div class="sl">Por debajo</div></div></div>'
-    +'<div class="card cb" style="margin-bottom:14px"><div style="font-size:13px;font-weight:600;color:var(--tx);margin-bottom:11px;padding-bottom:9px;border-bottom:1px solid var(--bdr)">Gestiones por tipo (general)</div>'
+    +'<div class="card cb" style="margin-bottom:14px"><div style="font-size:13px;font-weight:600;color:var(--tx);margin-bottom:11px;padding-bottom:9px;border-bottom:1px solid var(--bdr)">Gestiones por tipo '+(selAg?'(agente seleccionado)':'(general)')+'</div>'
     +'<div style="display:flex;gap:10px;flex-wrap:wrap">'
-    +[['contacto','Contacto'],['sin_contacto','Sin contacto'],['devolucion','Devolver'],['cas','CAS'],['transportadora','Transportadora'],['en_revision','En revision']].map(function(p){var v=gen[p[0]],pc=gen.total?Math.round(v/gen.total*100):0;return '<div style="flex:1;min-width:115px;background:var(--sur2);border-radius:var(--rs);padding:10px 12px"><div style="font-size:18px;font-weight:700;color:var(--tx)">'+v+'</div><div style="font-size:11px;color:var(--t2)">'+p[1]+' <span style="color:var(--t3)">('+pc+'%)</span></div></div>';}).join('')
+    +[['contacto','Contacto'],['sin_contacto','Sin contacto'],['devolucion','Devolver'],['cas','CAS'],['transportadora','Transportadora'],['en_revision','En revision']].map(function(p){var v=genShow[p[0]],pc=genShow.total?Math.round(v/genShow.total*100):0;return '<div style="flex:1;min-width:115px;background:var(--sur2);border-radius:var(--rs);padding:10px 12px"><div style="font-size:18px;font-weight:700;color:var(--tx)">'+v+'</div><div style="font-size:11px;color:var(--t2)">'+p[1]+' <span style="color:var(--t3)">('+pc+'%)</span></div></div>';}).join('')
     +'</div></div>'
     +'<div class="card"><div class="tw"><table><thead><tr><th>Agente</th><th>Progreso</th><th>Contacto</th><th>Sin contacto</th><th>Devolver</th><th>CAS</th><th>Transp.</th><th>En revision</th><th>Total</th></tr></thead><tbody>'+trs+'</tbody></table></div></div>';
 };
