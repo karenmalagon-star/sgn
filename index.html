@@ -2826,7 +2826,7 @@ sgnCargarOpciones = async function(){
   var cont=document.getElementById('z-sol-opciones');if(!cont||!SGN.curOrd)return;
   cont.style.display='block';
   cont.innerHTML='<p style="font-size:12px;color:var(--t3)">Cargando opciones de Dropi...</p>';
-  var r=await sgnFn('opciones-novedad',{order_id:SGN.curOrd.order_id});
+  var r=await sgnFn('quick-processor',{order_id:SGN.curOrd.order_id});
   if(!r||!r.ok){cont.innerHTML='<div class="al ag" style="font-size:12px">No se pudieron cargar las opciones de Dropi'+(r&&r.error?(' ('+sgnEsc(String(r.error))+')'):'')+'. Usa una opcion manual abajo.</div>';return;}
   var ops=r.opciones||[];SGN.curOpciones=ops;
   if(!ops.length){cont.innerHTML='<div class="al ag" style="font-size:12px">Dropi no devolvio opciones para esta novedad. Usa una opcion manual.</div>';return;}
