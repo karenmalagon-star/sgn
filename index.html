@@ -2455,9 +2455,13 @@ sgnRenderCal = async function(){
   // ALARMA: tiendas con activas y sin gestion en +1 dia (last review > 24h, o nunca)
   var alarma=Object.keys(stInfo).map(function(sn){
     var info=stInfo[sn];var last=lastGest[sn]||null;
-    var diasSin=last?(now-last)/DAY:(now-info.oldest)/DAY;
-    return {sn:sn,id:info.id,count:info.count,dias:diasSin,nunca:!last};
-  }).filter(function(x){return x.dias>=1;}).sort(function(p,q){return q.dias-p.dias;});
+    var ageOldest=(now-info.oldest)/DAY;
+    var diasSin=last?(now-last)/DAY:ageOldest;
+    return {sn:sn,id:info.id,count:info.count,dias:diasSin,age:ageOldest,nunca:!last};
+  }).filter(function(x){return x.nunca?(x.age>=1):(x.dias>=1);}).sort(function(p,q){
+    if(p.nunca!==q.nunca)return p.nunca?-1:1; // nunca gestionada va primero (mas urgente)
+    return p.nunca?(q.age-p.age):(q.dias-p.dias);
+  });
   // Barras: gestiones por dia (ultimos 7)
   var perDay={};(g.data||[]).forEach(function(x){var k=String(x.created_at||'').slice(0,10);perDay[k]=(perDay[k]||0)+1;});
   var dias=[];for(var i=6;i>=0;i--){dias.push(iso(new Date(now-i*DAY)));}
@@ -2467,11 +2471,12 @@ sgnRenderCal = async function(){
     var val=perDay[k]||0,h=Math.round(val/maxd*70)+2,dt=new Date(k+'T12:00:00');
     return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px"><div style="font-size:11px;font-weight:600;color:var(--tx)">'+val+'</div><div style="width:60%;max-width:36px;height:'+h+'px;background:var(--navy);border-radius:3px 3px 0 0"></div><div style="font-size:10px;color:var(--t3)">'+dow[dt.getDay()]+' '+dt.getDate()+'</div></div>';
   }).join('');
-  function diasLbl(x){var d=Math.floor(x.dias);if(x.nunca)return d+(d===1?' dia':' dias')+' sin gestionar';return d+(d===1?' dia':' dias')+' sin revisar';}
+  function diasLbl(x){if(x.nunca)return 'Nunca gestionada';var d=Math.floor(x.dias);return d+(d===1?' dia':' dias')+' sin revisar';}
   var alarmaRows=alarma.length?alarma.map(function(x){
-    var col=x.dias>=7?'br':x.dias>=3?'bg':'bn';
+    var col=x.nunca?'br':(x.dias>=7?'br':x.dias>=3?'bg':'bn');
+    var sub=x.count+' novedad'+(x.count===1?'':'es')+' activa'+(x.count===1?'':'s')+(x.nunca?' &middot; mas antigua: '+Math.floor(x.age)+'d':'');
     var click=x.id?' style="cursor:pointer" onclick="goTienda(\''+x.id+'\')"':' style="opacity:.7"';
-    return '<div'+click+' class="cal-alarm-row" style="display:flex;align-items:center;justify-content:space-between;padding:9px 2px;border-bottom:1px solid var(--bdr)"><div style="display:flex;flex-direction:column;gap:1px"><span style="font-size:12.5px;color:var(--tx);font-weight:600">'+sgnEsc(x.sn)+'</span><span style="font-size:10.5px;color:var(--t3)">'+x.count+' novedad'+(x.count===1?'':'es')+' activa'+(x.count===1?'':'s')+'</span></div><div style="display:flex;align-items:center;gap:10px"><span class="badge '+col+'">'+diasLbl(x)+'</span>'+(x.id?'<span style="font-size:11px;color:var(--navy);font-weight:700;white-space:nowrap">Gestionar &rarr;</span>':'')+'</div></div>';
+    return '<div'+click+' class="cal-alarm-row" style="display:flex;align-items:center;justify-content:space-between;padding:9px 2px;border-bottom:1px solid var(--bdr)"><div style="display:flex;flex-direction:column;gap:1px"><span style="font-size:12.5px;color:var(--tx);font-weight:600">'+sgnEsc(x.sn)+'</span><span style="font-size:10.5px;color:var(--t3)">'+sub+'</span></div><div style="display:flex;align-items:center;gap:10px"><span class="badge '+col+'">'+diasLbl(x)+'</span>'+(x.id?'<span style="font-size:11px;color:var(--navy);font-weight:700;white-space:nowrap">Gestionar &rarr;</span>':'')+'</div></div>';
   }).join(''):'<p style="font-size:12px;color:var(--grn);font-style:italic;padding:6px 0">Todas las tiendas con novedades activas se revisaron en las ultimas 24h. &#x1F389;</p>';
   var body=document.getElementById('cal-body');if(!body)return;
   body.innerHTML=
@@ -2479,7 +2484,7 @@ sgnRenderCal = async function(){
     +'<div class="sc" style="border-top:2px solid var(--grn)"><div class="sn" style="color:var(--grn)">'+v+'</div><div class="sl">Menos de 2 dias</div></div>'
     +'<div class="sc" style="border-top:2px solid var(--amb)"><div class="sn" style="color:var(--amb)">'+a+'</div><div class="sl">2 a 6 dias</div></div>'
     +'<div class="sc" style="border-top:2px solid var(--red)"><div class="sn" style="color:var(--red)">'+r+'</div><div class="sl">7 dias o mas</div></div></div>'
-    +'<div class="card cb" style="margin-bottom:14px;border-left:3px solid var(--amb)"><div style="font-size:13px;font-weight:600;color:var(--tx);margin-bottom:4px;padding-bottom:9px;border-bottom:1px solid var(--bdr)">&#x26A0; Tiendas sin revisar hace mas de 1 dia <span style="color:var(--amb)">('+alarma.length+')</span></div><p class="ps" style="font-size:11px;margin:6px 0 8px">Tienen novedades activas y no se les registra ninguna gestion en +24h. Haz clic en una tienda para abrir y gestionarla. (Evita revisar dos veces la misma y olvidar otra.)</p>'+alarmaRows+'</div>'
+    +'<div class="card cb" style="margin-bottom:14px;border-left:3px solid var(--amb)"><div style="font-size:13px;font-weight:600;color:var(--tx);margin-bottom:4px;padding-bottom:9px;border-bottom:1px solid var(--bdr)">&#x26A0; Tiendas sin revisar hace mas de 1 dia <span style="color:var(--amb)">('+alarma.length+')</span></div><p class="ps" style="font-size:11px;margin:6px 0 8px">Tienen novedades activas y no se les registra gestion en +24h. "Nunca gestionada" = aun no se ha trabajado (ordenadas por la novedad mas antigua); "X dias sin revisar" = dias desde la ultima gestion. Haz clic para abrir y gestionar. (Evita revisar dos veces la misma y olvidar otra.)</p>'+alarmaRows+'</div>'
     +'<div class="card cb"><div style="font-size:13px;font-weight:600;color:var(--tx);margin-bottom:12px;padding-bottom:9px;border-bottom:1px solid var(--bdr)">Gestiones de los ultimos 7 dias</div><div style="display:flex;align-items:flex-end;gap:6px;height:110px">'+barras+'</div></div>';
 };
 
@@ -3094,13 +3099,4 @@ guardar = async function(){
     return;
   }
   var resolvioOk=resolver&&resolved&&resolved.ok;
-  var nuevo=gAc==='rev'?'en_revision':gAc==='cas'?'cas_abierto':resolvioOk?'resuelta':'pendiente';
-  await SGN.client.from('novedades').update({intentos:(n.intentos||0)+1,estado_local:nuevo,assigned_to:null}).eq('order_id',n.order_id);
-  n.intentos=(n.intentos||0)+1;n.estado_local=nuevo;
-  sgnBuildTiendas();
-  closeMo('mog');setTimeout(function(){goPage('conf');},200);
-};
-
-</script>
-</body>
-</html>
+  var nuevo=gAc==='rev'?'en_revi
