@@ -413,7 +413,7 @@ function buildSB(){
   var isAg=role==='ag';
   var items=isAg
     ?[['cal','Calendario'],['tiendas','Tiendas'],['rend','Mi rendimiento']]
-    :[['cal','Calendario'],['tiendas','Tiendas'],['prod','Productividad'],['reportes','Reportes'],['ajustes','Ajustes']];
+    :[['cal','Calendario'],['tiendas','Tiendas'],['prod','Metricas'],['reportes','Reportes'],['ajustes','Ajustes']];
   var html='<div class="sblbl">Principal</div>';
   items.forEach(function(item){
     html+='<div class="ni" id="ni-'+item[0]+'" onclick="goPage(\''+item[0]+'\')">'+(IC[item[0]]||IC.cal)+item[1]+'</div>';
@@ -1420,7 +1420,7 @@ SGN.client.auth.getSession().then(function(r){if(r.data&&r.data.session)sgnEnter
 buildSB = function(){
   var items = role==='ag'
     ? [['tiendas','Tiendas'],['rend','Mi rendimiento'],['cal','Calendario']]
-    : [['tiendas','Tiendas'],['rend','Mi rendimiento'],['prod','Productividad'],['reportes','Reportes'],['ajustes','Ajustes'],['cal','Calendario']];
+    : [['tiendas','Tiendas'],['rend','Mi rendimiento'],['prod','Metricas'],['reportes','Reportes'],['ajustes','Ajustes'],['cal','Calendario']];
   var html='<div class="sblbl">Principal</div>';
   items.forEach(function(it){html+='<div class="ni" id="ni-'+it[0]+'" onclick="goPage(\''+it[0]+'\')">'+(IC[it[0]]||IC.cal)+it[1]+'</div>';});
   document.getElementById('sbn').innerHTML=html;
@@ -1791,7 +1791,7 @@ sgnEnter = async function(user){
 buildSB = function(){
   var items = role==='ag'
     ? [['tiendas','Tiendas'],['rend','Mi rendimiento'],['cal','Calendario']]
-    : [['tiendas','Tiendas'],['prod','Productividad'],['reportes','Reportes'],['ajustes','Ajustes'],['cal','Calendario']];
+    : [['tiendas','Tiendas'],['prod','Metricas'],['reportes','Reportes'],['ajustes','Ajustes'],['cal','Calendario']];
   var html='<div class="sblbl">Principal</div>';
   items.forEach(function(it){html+='<div class="ni" id="ni-'+it[0]+'" onclick="goPage(\''+it[0]+'\')">'+(IC[it[0]]||IC.cal)+it[1]+'</div>';});
   document.getElementById('sbn').innerHTML=html;
@@ -2284,27 +2284,54 @@ async function sgnSavePass(){
   });
 })();
 
-// ── Productividad REAL (reemplaza el demo) ──
+// ── Metricas REALES (Agente + Tienda) ──
+// Incluye: gestiones por tipo, TMR (tiempo medio de resolucion),
+// % resuelto en Dropi al primer intento y % de reincidencia.
+function sgnTmrFmt(o){if(!o||!o.tmrN)return '—';var h=o.tmrSum/o.tmrN;return h<24?Math.round(h)+'h':(h/24).toFixed(1)+'d';}
+function sgnPctDropi(o){return (o&&o.dropiN)?Math.round(o.dropiOk/o.dropiN*100):null;}
+function sgnPctReinc(o){if(!o)return null;var t=Object.keys(o.orders||{}).length,re=Object.keys(o.reincOrders||{}).length;return t?Math.round(re/t*100):null;}
+function sgnPctCell(p,inv){if(p===null||p===undefined)return '<td style="color:var(--t3)">—</td>';var bueno=inv?(p<=20):(p>=70),medio=inv?(p<=40):(p>=50);var c=bueno?'var(--grn)':medio?'var(--gold)':'var(--red)';return '<td style="color:'+c+';font-weight:600">'+p+'%</td>';}
+
 sgnRenderProd = async function(){
   var el=document.getElementById('pprod');if(!el)return;
   function iso(d){return d.toISOString().slice(0,10);}
   if(!SGN.prodDesde){SGN.prodHasta=iso(new Date());SGN.prodDesde=iso(new Date(Date.now()-6*864e5));}
-  el.innerHTML='<div class="pt">Productividad</div><div class="ps">Rendimiento real del equipo (datos de gestiones)</div>'
+  if(!SGN.metricasView)SGN.metricasView='agente';
+  var vw=SGN.metricasView;
+  el.innerHTML='<div class="pt">Metricas</div><div class="ps">Rendimiento real del equipo: gestiones, tiempos y efectividad en Dropi</div>'
+    +'<div style="display:flex;gap:6px;margin:10px 0 12px">'
+    +'<button class="btn '+(vw==='agente'?'bp':'')+' bsm" onclick="sgnMetricasTab(\'agente\')">Por agente</button>'
+    +'<button class="btn '+(vw==='tienda'?'bp':'')+' bsm" onclick="sgnMetricasTab(\'tienda\')">Por tienda</button></div>'
     +'<div class="fb"><div class="fr"><label>Desde</label><input type="date" id="pr-desde" value="'+SGN.prodDesde+'"><label>Hasta</label><input type="date" id="pr-hasta" value="'+SGN.prodHasta+'"><button class="btn bp bsm" onclick="sgnProdConsultar()">Consultar</button></div></div>'
     +'<div id="pr-body"><p class="ps">Cargando metricas reales...</p></div>';
+  // Datos compartidos por ambas vistas
   var pr=await SGN.client.from('profiles').select('id,full_name,role,active,metas_dia').eq('role','agente');
   var agentes=(pr.data||[]).filter(function(a){return a.active!==false;});
-  var g=await SGN.client.from('gestiones').select('agente_id,accion,created_at').gte('created_at',SGN.prodDesde+'T00:00:00').lte('created_at',SGN.prodHasta+'T23:59:59').limit(20000);
+  var g=await SGN.client.from('gestiones').select('agente_id,accion,created_at,order_id,store_name,resolved_in_dropi').gte('created_at',SGN.prodDesde+'T00:00:00').lte('created_at',SGN.prodHasta+'T23:59:59').limit(20000);
   var rows=g.data||[];
+  var nv=await SGN.client.from('novedades').select('order_id,store_name,broker_created_at,intentos,estado_local').limit(20000);
+  var novList=nv.data||[];var novMap={};novList.forEach(function(n){novMap[String(n.order_id)]=n;});
+  if(vw==='tienda'){sgnMetricasTienda(rows,novList,novMap);return;}
+  sgnMetricasAgente(agentes,rows,novMap);
+};
+
+sgnMetricasTab = function(v){SGN.metricasView=v;sgnRenderProd();};
+
+sgnMetricasAgente = function(agentes,rows,novMap){
   var TIPOS=['contacto','sin_contacto','devolucion','cas','transportadora','en_revision'];
-  function nuevo(){var o={total:0};TIPOS.forEach(function(t){o[t]=0;});return o;}
+  function nuevo(){var o={total:0,tmrSum:0,tmrN:0,dropiOk:0,dropiN:0,orders:{},reincOrders:{}};TIPOS.forEach(function(t){o[t]=0;});return o;}
+  function acum(b,r){
+    b.total++;
+    if(TIPOS.indexOf(r.accion)>-1)b[r.accion]++;
+    var oid=String(r.order_id);if(oid)b.orders[oid]=1;
+    var n=novMap[oid];
+    if(n&&n.broker_created_at){var dt=(new Date(r.created_at)-new Date(n.broker_created_at))/36e5;if(dt>=0&&dt<24*120){b.tmrSum+=dt;b.tmrN++;}}
+    if(r.resolved_in_dropi===true||r.resolved_in_dropi===false){b.dropiN++;if(r.resolved_in_dropi===true)b.dropiOk++;}
+    if(n&&(n.intentos||0)>=2&&oid)b.reincOrders[oid]=1;
+  }
   var byAg={},gen=nuevo();
   agentes.forEach(function(a){byAg[a.id]=nuevo();});
-  rows.forEach(function(r){
-    if(!byAg[r.agente_id])byAg[r.agente_id]=nuevo();
-    var b=byAg[r.agente_id];b.total++;gen.total++;
-    if(TIPOS.indexOf(r.accion)>-1){b[r.accion]++;gen[r.accion]++;}
-  });
+  rows.forEach(function(r){if(!byAg[r.agente_id])byAg[r.agente_id]=nuevo();acum(byAg[r.agente_id],r);acum(gen,r);});
   function metaRango(metas){
     metas=Array.isArray(metas)?metas:[280,280,280,280,280,150,0];
     var t=0,dB=new Date(SGN.prodHasta+'T12:00:00');
@@ -2322,22 +2349,61 @@ sgnRenderProd = async function(){
     if(pct>100)superaron++;else if(pct>=80)enMeta++;else debajo++;
     var col=pct>100?'var(--gold)':pct>=80?'var(--grn)':'var(--red)';
     trs+='<tr><td><div style="display:flex;align-items:center;gap:8px"><div class="av avn">'+sgnInitials(a.full_name||'?')+'</div><span style="font-size:12.5px;font-weight:500">'+sgnEsc(a.full_name||'—')+'</span></div></td>'
-      +'<td><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;height:6px;background:var(--sur2);border-radius:3px;overflow:hidden;max-width:110px"><div style="height:100%;width:'+Math.min(100,pct)+'%;background:'+col+'"></div></div><span style="font-size:12px;color:'+col+';font-weight:600">'+pct+'%</span></div></td>'
-      +'<td>'+c.contacto+'</td><td>'+c.sin_contacto+'</td><td>'+c.devolucion+'</td><td>'+c.cas+'</td><td>'+c.transportadora+'</td><td>'+c.en_revision+'</td><td><strong>'+c.total+'</strong></td></tr>';
+      +'<td><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;height:6px;background:var(--sur2);border-radius:3px;overflow:hidden;max-width:90px"><div style="height:100%;width:'+Math.min(100,pct)+'%;background:'+col+'"></div></div><span style="font-size:12px;color:'+col+';font-weight:600">'+pct+'%</span></div></td>'
+      +'<td>'+c.contacto+'</td><td>'+c.sin_contacto+'</td><td>'+c.devolucion+'</td><td>'+c.cas+'</td><td>'+c.transportadora+'</td><td>'+c.en_revision+'</td><td><strong>'+c.total+'</strong></td>'
+      +'<td>'+sgnTmrFmt(c)+'</td>'+sgnPctCell(sgnPctDropi(c),false)+sgnPctCell(sgnPctReinc(c),true)+'</tr>';
   });
-  if(!trs)trs='<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--t3);font-size:13px">No hay agentes activos o no hay gestiones en este periodo.</td></tr>';
+  if(!trs)trs='<tr><td colspan="12" style="text-align:center;padding:24px;color:var(--t3);font-size:13px">No hay agentes activos o no hay gestiones en este periodo.</td></tr>';
   var body=document.getElementById('pr-body');if(!body)return;
   body.innerHTML=
     '<div style="margin-bottom:12px"><label style="font-size:11px;font-weight:600;color:var(--t2);margin-right:6px">Agente:</label><select onchange="SGN.prodAgente=this.value;sgnRenderProd()" style="font-size:12px;padding:5px 10px;border:1px solid var(--bdr2);border-radius:var(--rs);background:var(--sur);color:var(--tx);font-family:inherit"><option value="">Todos los agentes</option>'+agentes.map(function(a){return '<option value="'+a.id+'"'+(selAg===a.id?' selected':'')+'>'+sgnEsc(a.full_name||a.id)+'</option>';}).join('')+'</select></div>'
-    +'<div class="sg" style="margin-bottom:16px"><div class="sc"><div class="sn">'+totalGest+'</div><div class="sl">Gestiones en periodo</div></div>'
+    +'<div class="sg" style="margin-bottom:14px"><div class="sc"><div class="sn">'+totalGest+'</div><div class="sl">Gestiones en periodo</div></div>'
     +'<div class="sc" style="border-top:2px solid var(--grn)"><div class="sn" style="color:var(--grn)">'+enMeta+'</div><div class="sl">En meta</div></div>'
     +'<div class="sc" style="border-top:2px solid var(--gold)"><div class="sn" style="color:var(--gold)">'+superaron+'</div><div class="sl">Superaron meta</div></div>'
     +'<div class="sc" style="border-top:2px solid var(--red)"><div class="sn" style="color:var(--red)">'+debajo+'</div><div class="sl">Por debajo</div></div></div>'
+    +'<div class="sg" style="margin-bottom:16px"><div class="sc" style="border-top:2px solid var(--navy)"><div class="sn">'+sgnTmrFmt(genShow)+'</div><div class="sl">TMR (tiempo medio resolucion)</div></div>'
+    +'<div class="sc" style="border-top:2px solid var(--grn)"><div class="sn" style="color:var(--grn)">'+(sgnPctDropi(genShow)===null?'—':sgnPctDropi(genShow)+'%')+'</div><div class="sl">Resuelto en Dropi (1er intento)</div></div>'
+    +'<div class="sc" style="border-top:2px solid var(--red)"><div class="sn" style="color:var(--red)">'+(sgnPctReinc(genShow)===null?'—':sgnPctReinc(genShow)+'%')+'</div><div class="sl">Reincidencia</div></div></div>'
     +'<div class="card cb" style="margin-bottom:14px"><div style="font-size:13px;font-weight:600;color:var(--tx);margin-bottom:11px;padding-bottom:9px;border-bottom:1px solid var(--bdr)">Gestiones por tipo '+(selAg?'(agente seleccionado)':'(general)')+'</div>'
     +'<div style="display:flex;gap:10px;flex-wrap:wrap">'
     +[['contacto','Contacto'],['sin_contacto','Sin contacto'],['devolucion','Devolver'],['cas','CAS'],['transportadora','Transportadora'],['en_revision','En revision']].map(function(p){var v=genShow[p[0]],pc=genShow.total?Math.round(v/genShow.total*100):0;return '<div style="flex:1;min-width:115px;background:var(--sur2);border-radius:var(--rs);padding:10px 12px"><div style="font-size:18px;font-weight:700;color:var(--tx)">'+v+'</div><div style="font-size:11px;color:var(--t2)">'+p[1]+' <span style="color:var(--t3)">('+pc+'%)</span></div></div>';}).join('')
     +'</div></div>'
-    +'<div class="card"><div class="tw"><table><thead><tr><th>Agente</th><th>Progreso</th><th>Contacto</th><th>Sin contacto</th><th>Devolver</th><th>CAS</th><th>Transp.</th><th>En revision</th><th>Total</th></tr></thead><tbody>'+trs+'</tbody></table></div></div>';
+    +'<div class="card"><div class="tw"><table><thead><tr><th>Agente</th><th>Progreso</th><th>Contacto</th><th>Sin contacto</th><th>Devolver</th><th>CAS</th><th>Transp.</th><th>En revision</th><th>Total</th><th>TMR</th><th>% Dropi 1er</th><th>% Reinc.</th></tr></thead><tbody>'+trs+'</tbody></table></div></div>'
+    +'<p class="ps" style="margin-top:8px;font-size:11px">TMR: promedio desde que la novedad aparece hasta que se gestiona &middot; % Dropi 1er: efectividad del resolve en Dropi &middot; % Reinc.: ordenes que requirieron 2+ intentos.</p>';
+};
+
+sgnMetricasTienda = function(rows,novList,novMap){
+  function nuevoT(){return {gest:0,tmrSum:0,tmrN:0,dropiOk:0,dropiN:0,orders:{},reincOrders:{},activas:0};}
+  var st={};
+  rows.forEach(function(r){
+    var sn=r.store_name||'—';if(!st[sn])st[sn]=nuevoT();var b=st[sn];
+    b.gest++;var oid=String(r.order_id);if(oid)b.orders[oid]=1;
+    var n=novMap[oid];
+    if(n&&n.broker_created_at){var dt=(new Date(r.created_at)-new Date(n.broker_created_at))/36e5;if(dt>=0&&dt<24*120){b.tmrSum+=dt;b.tmrN++;}}
+    if(r.resolved_in_dropi===true||r.resolved_in_dropi===false){b.dropiN++;if(r.resolved_in_dropi===true)b.dropiOk++;}
+    if(n&&(n.intentos||0)>=2&&oid)b.reincOrders[oid]=1;
+  });
+  novList.forEach(function(n){if(['pendiente','en_revision','cas_abierto'].indexOf(n.estado_local)>-1){var sn=n.store_name||'—';if(!st[sn])st[sn]=nuevoT();st[sn].activas++;}});
+  var arr=Object.keys(st).map(function(k){return [k,st[k]];}).filter(function(x){return x[1].gest>0||x[1].activas>0;});
+  arr.sort(function(a,b){return b[1].gest-a[1].gest;});
+  var totGest=0,totAct=0,gTmrSum=0,gTmrN=0,gOk=0,gN=0;
+  var trs=arr.map(function(x){
+    var b=x[1];totGest+=b.gest;totAct+=b.activas;gTmrSum+=b.tmrSum;gTmrN+=b.tmrN;gOk+=b.dropiOk;gN+=b.dropiN;
+    return '<tr><td style="font-size:12.5px;font-weight:500">'+sgnEsc(x[0])+'</td>'
+      +'<td>'+b.activas+'</td><td><strong>'+b.gest+'</strong></td>'
+      +'<td>'+sgnTmrFmt(b)+'</td>'+sgnPctCell(sgnPctDropi(b),false)+sgnPctCell(sgnPctReinc(b),true)+'</tr>';
+  }).join('');
+  if(!trs)trs='<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--t3);font-size:13px">No hay gestiones ni novedades activas en este periodo.</td></tr>';
+  var gTmr=sgnTmrFmt({tmrSum:gTmrSum,tmrN:gTmrN});
+  var gPct=gN?Math.round(gOk/gN*100):null;
+  var body=document.getElementById('pr-body');if(!body)return;
+  body.innerHTML=
+    '<div class="sg" style="margin-bottom:16px"><div class="sc"><div class="sn">'+arr.length+'</div><div class="sl">Tiendas con actividad</div></div>'
+    +'<div class="sc"><div class="sn">'+totGest+'</div><div class="sl">Gestiones en periodo</div></div>'
+    +'<div class="sc" style="border-top:2px solid var(--navy)"><div class="sn">'+gTmr+'</div><div class="sl">TMR global</div></div>'
+    +'<div class="sc" style="border-top:2px solid var(--grn)"><div class="sn" style="color:var(--grn)">'+(gPct===null?'—':gPct+'%')+'</div><div class="sl">Resuelto en Dropi (1er)</div></div></div>'
+    +'<div class="card"><div class="tw"><table><thead><tr><th>Tienda</th><th>Activas</th><th>Gestiones</th><th>TMR</th><th>% Dropi 1er</th><th>% Reinc.</th></tr></thead><tbody>'+trs+'</tbody></table></div></div>'
+    +'<p class="ps" style="margin-top:8px;font-size:11px">Activas: novedades pendientes/en revision/CAS &middot; TMR: tiempo medio desde aparicion hasta gestion &middot; % Dropi 1er: efectividad del resolve &middot; % Reinc.: ordenes con 2+ intentos (senal de tienda problematica).</p>';
 };
 sgnProdConsultar = function(){
   var d=document.getElementById('pr-desde'),h=document.getElementById('pr-hasta');
