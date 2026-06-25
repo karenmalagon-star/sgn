@@ -3082,4 +3082,51 @@ guardar = async function(){
       solucion=v('sr-sol');resolver=true;
       payload={solution:solucion,direccionConfirma:v('sr-dir'),nombreConfirma:v('sr-nom')||n.client_name||'',selectValueConfirma:v('sr-sv')||'1',tipo_solucion:'volver_a_ofrecer'};
     } else if(gSol==='return'){
-      motivo=v('sr
+      motivo=v('sr-mot');solucion=v('sr-rsol');resolver=true;
+      payload={solution:solucion,motivo_devolucion:motivo,tipo_solucion:'return'};
+    } else {
+      // sin solucion Dropi -> no se debe guardar (la novedad sigue vigente)
+      alert('Esta gestion exige una Solucion Dropi. Elige una opcion real de Dropi (recomendado) o una opcion manual.');
+      return;
+    }
+  }
+  var b=document.getElementById('bguard');
+  if(b){b.disabled=true;b.textContent='Guardando...';}
+
+  var resolved=null;
+  if(SGN.resolveEnDropi&&resolver){
+    resolved=await sgnFn('resolve-novedad',{
+      order_id:n.order_id,variante:n.variante||'C',
+      opcion:(payload&&payload.opcion)?payload.opcion:undefined,
+      solution_text:solucion||'',
+      direccion_corregida:(payload&&(payload.direccion_corregida||payload.direccionConfirma))||undefined,
+      solution_payload:payload
+    });
+    if(!(resolved&&resolved.ok)){
+      var motivo=(resolved&&(resolved.reason||resolved.error))||'sin detalle';
+      alert('⚠️ Dropi NO aplico la solucion: la novedad queda PENDIENTE para gestion manual.\n\nMotivo de Dropi: '+motivo+'\n\n(La nota interna y el intento si quedan registrados.)');
+    }
+  }
+
+  var g=await SGN.client.from('gestiones').insert({
+    order_id:n.order_id,store_name:n.store_name,agente_id:SGN.profile.id,
+    accion:acMap[gAc],comentario:comentario,nota_revision:nota,motivo_devolucion:motivo,
+    solucion_dropi:solucion,variante:n.variante,solution_payload:payload,
+    resolved_in_dropi:resolver?(resolved?!!resolved.ok:null):null
+  });
+  if(g.error){
+    alert('Error al guardar la gestion: '+g.error.message);
+    if(b){b.disabled=false;b.innerHTML='&#x2713; Guardar gestion';}
+    return;
+  }
+  var resolvioOk=resolver&&resolved&&resolved.ok;
+  var nuevo=gAc==='rev'?'en_revision':gAc==='cas'?'cas_abierto':resolvioOk?'resuelta':'pendiente';
+  await SGN.client.from('novedades').update({intentos:(n.intentos||0)+1,estado_local:nuevo,assigned_to:null}).eq('order_id',n.order_id);
+  n.intentos=(n.intentos||0)+1;n.estado_local=nuevo;
+  sgnBuildTiendas();
+  closeMo('mog');setTimeout(function(){goPage('conf');},200);
+};
+
+</script>
+</body>
+</html>
