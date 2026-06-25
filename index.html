@@ -1897,7 +1897,7 @@ openGest = function(id,ca,cl,tel,pa,tp,inp){
   document.getElementById('mogc').innerHTML=
     '<div class="mh"><div class="mt">Gestionar novedad <span style="font-size:11px;background:rgba(212,160,23,.25);color:#D4A017;padding:2px 8px;border-radius:20px;margin-left:5px;font-weight:500">'+il+'</span></div><button class="mc" onclick="closeMo(\'mog\')">&#xD7;</button></div>'
     +'<div class="mb">'
-    +'<div class="ig"><div class="ii"><div class="il">Orden</div><div class="iv" style="font-family:monospace">#'+sgnEsc(id)+'</div></div><div class="ii"><div class="il">Tipo</div><div class="iv"><span class="rtag">&#x2713; Regular</span></div></div><div class="ii"><div class="il">Causal</div><div class="iv" style="font-size:12px">'+sgnEsc(ca)+'</div></div><div class="ii"><div class="il">Cliente</div><div class="iv">'+sgnEsc(cl)+'</div></div></div>'
+    +'<div class="ig"><div class="ii"><div class="il">Orden</div><div class="iv" style="font-family:monospace">#'+sgnEsc(id)+'</div></div><div class="ii"><div class="il">Tipo</div><div class="iv"><span class="rtag">&#x2713; Regular</span></div></div><div class="ii"><div class="il">Causal</div><div class="iv" style="font-size:12px">'+sgnEsc(ca)+'</div></div><div class="ii"><div class="il">Cliente</div><div class="iv">'+sgnEsc(cl)+'</div></div><div class="ii"><div class="il">Producto</div><div class="iv" style="font-size:12px">'+sgnEsc((SGN.curOrd&&SGN.curOrd.producto)||'\u2014')+'</div></div></div>'
     +'<div class="tel-card"><div><div class="tellbl">&#x1F4F1; Numero de celular</div><div class="telnum" id="gtel">'+sgnEsc(tel)+'</div><div class="telpais">'+sgnEsc(pa)+'</div></div>'
     +'<div class="telbts">'
     +'<button class="telbt tcall" onclick="window.location.href=\'tel:\'+document.getElementById(\'gtel\').textContent.replace(/\\s/g,\'\')">&#x1F4DE; Llamar</button>'
@@ -2027,6 +2027,9 @@ function sgnRenderUsuarios(){
     var togBtn=sgnPuedeEliminar(u)
       ?'<button class="btn '+(u.active?'bgo':'bg')+' bsm" onclick="sgnUserToggle(\''+u.id+'\')">'+(u.active?'Inhabilitar':'Habilitar')+'</button>'
       :'';
+    var resetBtn=(sgnPuedeGestionar(u)&&u.id!==SGN.profile.id)
+      ?'<button class="btn ba bsm" onclick="sgnUserReset(\''+u.id+'\')">Restablecer clave</button>'
+      :'';
     rows+='<tr style="'+(u.active?'':'opacity:.5')+'">'
       +'<td><div style="display:flex;align-items:center;gap:8px"><div class="av '+(u.role==='agente'?'avn':'avg')+'">'+sgnInitials(u.full_name)+'</div>'
       +'<div><div style="font-size:13px;font-weight:500;color:var(--tx)">'+sgnEsc(u.full_name)+'</div>'
@@ -2035,7 +2038,7 @@ function sgnRenderUsuarios(){
       +'<td><span class="badge '+(u.active?'bgn':'bgr')+'">'+(u.active?'Activo':'Inactivo')+'</span></td>'
       +'<td style="font-family:monospace;font-size:12px">'+metaCell+'</td>'
       +'<td style="font-size:12.5px;color:var(--t2)">'+f+'</td>'
-      +'<td><div class="acts">'+edBtn+togBtn+delBtn+'</div></td></tr>';
+      +'<td><div class="acts">'+edBtn+resetBtn+togBtn+delBtn+'</div></td></tr>';
   });
   tbody.innerHTML=rows||'<tr><td colspan="6" style="text-align:center;padding:22px;color:var(--t3);font-size:13px">No hay usuarios que coincidan.</td></tr>';
   var checks=document.getElementById('masiva-checks');
@@ -2078,6 +2081,18 @@ openAgCrud = function(tp,rolHint){
   document.getElementById('moag').classList.add('open');
 };
 
+async function sgnUserReset(id){
+  var u=null;SGN.users.forEach(function(x){if(x.id===id)u=x;});
+  if(!u)return;
+  if(!sgnPuedeGestionar(u)){alert('No tienes permiso para restablecer este usuario.');return;}
+  var np=prompt('Nueva contrasena temporal para '+(u.full_name||u.email||'')+' (minimo 8 caracteres).\n\nEl usuario debera cambiarla en su proximo ingreso.');
+  if(np===null)return;
+  np=(np||'').trim();
+  if(np.length<8){alert('La contrasena debe tener minimo 8 caracteres.');return;}
+  var r=await sgnFn('admin-users',{action:'reset_password',user_id:id,password:np});
+  if(!r||!r.ok){alert('No se pudo restablecer: '+((r&&r.error)||'error desconocido'));return;}
+  alert('Contrasena restablecida correctamente.\n\nEntregale al usuario esta contrasena temporal:\n\n   '+np+'\n\nLa debera cambiar al iniciar sesion.');
+}
 async function sgnUserCreate(rol){
   var nombre=document.getElementById('nu-nombre').value.trim();
   var email=document.getElementById('nu-email').value.trim();
@@ -2969,7 +2984,7 @@ openGest = function(id,ca,cl,tel,pa,tp,inp){
   document.getElementById('mogc').innerHTML=
     '<div class="mh"><div class="mt">Gestionar novedad <span style="font-size:11px;background:rgba(212,160,23,.25);color:#D4A017;padding:2px 8px;border-radius:20px;margin-left:5px;font-weight:500">'+il+'</span></div><button class="mc" onclick="closeMo(\'mog\')">&#xD7;</button></div>'
     +'<div class="mb">'
-    +'<div class="ig"><div class="ii"><div class="il">Orden</div><div class="iv" style="font-family:monospace">#'+sgnEsc(id)+'</div></div><div class="ii"><div class="il">Tipo</div><div class="iv"><span class="rtag">&#x2713; Regular</span></div></div><div class="ii"><div class="il">Causal</div><div class="iv" style="font-size:12px">'+sgnEsc(ca)+'</div></div><div class="ii"><div class="il">Cliente</div><div class="iv">'+sgnEsc(cl)+'</div></div></div>'
+    +'<div class="ig"><div class="ii"><div class="il">Orden</div><div class="iv" style="font-family:monospace">#'+sgnEsc(id)+'</div></div><div class="ii"><div class="il">Tipo</div><div class="iv"><span class="rtag">&#x2713; Regular</span></div></div><div class="ii"><div class="il">Causal</div><div class="iv" style="font-size:12px">'+sgnEsc(ca)+'</div></div><div class="ii"><div class="il">Cliente</div><div class="iv">'+sgnEsc(cl)+'</div></div><div class="ii"><div class="il">Producto</div><div class="iv" style="font-size:12px">'+sgnEsc((SGN.curOrd&&SGN.curOrd.producto)||'\u2014')+'</div></div></div>'
     +'<div class="tel-card"><div><div class="tellbl">&#x1F4F1; Numero de celular</div><div class="telnum" id="gtel">'+sgnEsc(tel)+'</div><div class="telpais">'+sgnEsc(pa)+'</div></div>'
     +'<div class="telbts">'
     +'<button class="telbt tcall" onclick="window.location.href=\'tel:\'+document.getElementById(\'gtel\').textContent.replace(/\\s/g,\'\')">&#x1F4DE; Llamar</button>'
