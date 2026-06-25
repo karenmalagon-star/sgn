@@ -1463,6 +1463,45 @@ async function sgnBulkApply(updateObj, confirmMsg){
 sgnBulkDescartar = function(){sgnBulkApply({estado_local:'descartada',assigned_to:null},'Descartar {n} novedad(es)? Saldran del listado de pendientes (No estan en Dropi). Podras restaurarlas con el filtro "Descartada".');};
 sgnBulkEstado = function(){var sel=document.getElementById('td-bulk-estado');var e=sel?sel.value:'';if(!e){alert('Elige un estado.');return;}var lbl={pendiente:'Pendiente',en_revision:'En revision',cas_abierto:'CAS'}[e]||e;sgnBulkApply({estado_local:e},'Cambiar {n} novedad(es) al estado "'+lbl+'"?');};
 sgnBulkAsignar = function(){var sel=document.getElementById('td-bulk-asig');var a=sel?sel.value:'';if(!a){alert('Elige un agente.');return;}var nom=sel.options[sel.selectedIndex].text;sgnBulkApply({assigned_to:a},'Asignar {n} novedad(es) a '+nom+'?');};
+sgnRenderMotivosTab = function(){
+  var el=document.getElementById('aj0');if(!el)return;
+  var list=SGN.motivosFull||[];
+  var rows=list.map(function(m){return '<div class="mrow"><span class="mhdl">&#x2807;</span><span class="mtext">'+sgnEsc(m.texto)+'</span><div class="acts"><button class="btn bgn2 bsm" onclick="sgnMotivoEdit(\''+m.id+'\')">Editar</button><button class="btn br2 bsm" onclick="sgnMotivoDel(\''+m.id+'\')">Eliminar</button></div></div>';}).join('');
+  el.innerHTML='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><p style="font-size:12.5px;color:var(--t2)">Motivos de devolucion (se usan en la Solucion Dropi de tipo Return).</p><span class="badge bgr">'+list.length+' motivos</span></div>'
+    +'<div class="card">'+(rows||'<div style="padding:14px;font-size:12.5px;color:var(--t3)">Aun no hay motivos. Agrega el primero abajo.</div>')
+    +'<div style="display:flex;gap:7px;padding:10px 14px;border-top:1px solid var(--bdr)"><input type="text" id="mot-new" placeholder="Agregar nuevo motivo..." onkeydown="if(event.key===\'Enter\')sgnMotivoAdd()" style="flex:1;font-size:12px;padding:6px 9px;border:1px solid var(--bdr2);border-radius:var(--rs);background:var(--sur);color:var(--tx);font-family:inherit"><button class="btn bp bsm" onclick="sgnMotivoAdd()">+ Agregar</button></div></div>';
+};
+sgnLoadMotivos = async function(){
+  var r=await SGN.client.from('motivos_devolucion').select('id,texto,orden,activo').eq('activo',true).order('orden');
+  if(r.error){console.warn('motivos',r.error.message);return;}
+  SGN.motivosFull=r.data||[];
+  SGN.motivos=SGN.motivosFull.map(function(m){return m.texto;});
+  sgnRenderMotivosTab();
+};
+sgnMotivoAdd = async function(){
+  var inp=document.getElementById('mot-new');var t=inp?inp.value.trim():'';
+  if(!t){alert('Escribe el motivo de devolucion.');return;}
+  var maxO=0;(SGN.motivosFull||[]).forEach(function(m){if((m.orden||0)>maxO)maxO=m.orden;});
+  var r=await SGN.client.from('motivos_devolucion').insert({texto:t,activo:true,orden:maxO+1});
+  if(r.error){alert('No se pudo agregar: '+r.error.message);return;}
+  if(inp)inp.value='';
+  sgnLoadMotivos();
+};
+sgnMotivoEdit = async function(id){
+  var cur='';(SGN.motivosFull||[]).forEach(function(m){if(String(m.id)===String(id))cur=m.texto;});
+  var t=prompt('Editar motivo de devolucion:',cur);if(t===null)return;t=t.trim();
+  if(!t){alert('El motivo no puede quedar vacio.');return;}
+  var r=await SGN.client.from('motivos_devolucion').update({texto:t}).eq('id',id);
+  if(r.error){alert('No se pudo editar: '+r.error.message);return;}
+  sgnLoadMotivos();
+};
+sgnMotivoDel = async function(id){
+  if(!confirm('Eliminar este motivo de devolucion? Dejara de aparecer en la lista.'))return;
+  var r=await SGN.client.from('motivos_devolucion').update({activo:false}).eq('id',id);
+  if(r.error){alert('No se pudo eliminar: '+r.error.message);return;}
+  sgnLoadMotivos();
+};
+
 
 sgnDescartar = async function(orderId){
   var n=null;SGN.novedades.forEach(function(x){if(x.order_id===orderId)n=x;});
@@ -1854,7 +1893,7 @@ renderPg = function(pg){
     sgnLoadData().then(function(){if(curPg==='tiendas'){sgnRenderBase('tiendas');sgnInjectBusqueda();}});
     return;
   }
-  if(pg==='ajustes'){sgnRenderBase('ajustes');sgnLoadUsuarios();return;}
+  if(pg==='ajustes'){sgnRenderBase('ajustes');sgnLoadUsuarios();sgnLoadMotivos();return;}
   sgnRenderBase(pg);
 };
 
@@ -2827,7 +2866,7 @@ renderPg = function(pg){
     sgnLoadData().then(function(){if(curPg==='tiendas'){sgnRenderBase('tiendas');sgnInjectBusqueda();}});
     return;
   }
-  if(pg==='ajustes'){sgnRenderBase('ajustes');sgnLoadUsuarios();return;}
+  if(pg==='ajustes'){sgnRenderBase('ajustes');sgnLoadUsuarios();sgnLoadMotivos();return;}
   sgnRenderBase(pg);
 };
 function sgnTdComments(){
