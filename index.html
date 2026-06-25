@@ -1443,6 +1443,24 @@ renderPg = function(pg){
 
 // ── TIENDAS: botones reales ──
 function goTienda(id){SGN.curStoreId=id;goPage('td');}
+sgnDescartar = async function(orderId){
+  var n=null;SGN.novedades.forEach(function(x){if(x.order_id===orderId)n=x;});
+  if(!n)return;
+  if(!confirm('Marcar la orden #'+orderId+' como "Descartada (no esta en Dropi)"?\n\nSaldra del listado de pendientes. Podras verla y restaurarla con el filtro de estado "Descartada".'))return;
+  var r=await SGN.client.from('novedades').update({estado_local:'descartada',assigned_to:null}).eq('order_id',orderId);
+  if(r.error){alert('No se pudo descartar: '+r.error.message);return;}
+  n.estado_local='descartada';n.assigned_to=null;
+  if(typeof sgnRenderTd==='function')sgnRenderTd();
+};
+sgnRestaurar = async function(orderId){
+  var n=null;SGN.novedades.forEach(function(x){if(x.order_id===orderId)n=x;});
+  if(!n)return;
+  if(!confirm('Restaurar la orden #'+orderId+' a "Pendiente"?'))return;
+  var r=await SGN.client.from('novedades').update({estado_local:'pendiente'}).eq('order_id',orderId);
+  if(r.error){alert('No se pudo restaurar: '+r.error.message);return;}
+  n.estado_local='pendiente';
+  if(typeof sgnRenderTd==='function')sgnRenderTd();
+};
 filterTiendas = function(){
   var buscar=(document.getElementById('tf-buscar')?document.getElementById('tf-buscar').value:'').toLowerCase();
   var estado=document.getElementById('tf-estado')?document.getElementById('tf-estado').value:'';
@@ -1561,6 +1579,7 @@ function sgnRenderTd(){
   if(ageF){novs=novs.filter(function(n){if(!n.broker_created_at)return false;var d=Math.floor((Date.now()-new Date(n.broker_created_at).getTime())/864e5);if(ageF==='v')return d<2;if(ageF==='a')return d>=2&&d<7;if(ageF==='r')return d>=7;return true;});}
   var estF=SGN.tdEstado||'';
   if(estF){novs=novs.filter(function(n){return n.estado_local===estF;});}
+  if(estF!=='descartada')novs=novs.filter(function(n){return n.estado_local!=='descartada';}); // las descartadas solo se ven con su filtro
   var fD=SGN.tdFDesde||'',fH=SGN.tdFHasta||'';
   if(fD||fH){novs=novs.filter(function(n){if(!n.broker_created_at)return false;var f=String(n.broker_created_at).slice(0,10);if(fD&&f<fD)return false;if(fH&&f>fH)return false;return true;});}
   var orden={pendiente:0,en_revision:1,cas_abierto:2,resuelta:3};
@@ -1582,14 +1601,16 @@ function sgnRenderTd(){
     var sf=sgnSemaforo(n);
     var fechaTxt=n.broker_created_at?new Date(n.broker_created_at).toLocaleDateString('es-CO',{day:'2-digit',month:'2-digit',year:'2-digit'}):'—';
     var fechaCell='<td style="font-size:11.5px;white-space:nowrap"><span title="Antiguedad de la novedad" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:'+sf.col+';margin-right:6px;vertical-align:middle"></span>'+fechaTxt+(sf.dias!==null?' <span style="color:var(--t3);font-size:10.5px">('+sf.dias+'d)</span>':'')+'</td>';
-    var estLbl={pendiente:'Pendiente',en_revision:'En revision',cas_abierto:'CAS abierto',resuelta:'Gestionada'}[n.estado_local]||n.estado_local;
-    var badge=n.estado_local==='pendiente'?'bg':n.estado_local==='en_revision'?'bn':n.estado_local==='cas_abierto'?'br':'bgn';
+    var estLbl={pendiente:'Pendiente',en_revision:'En revision',cas_abierto:'CAS abierto',resuelta:'Gestionada',descartada:'Descartada (no en Dropi)'}[n.estado_local]||n.estado_local;
+    var badge=n.estado_local==='pendiente'?'bg':n.estado_local==='en_revision'?'bn':n.estado_local==='cas_abierto'?'br':n.estado_local==='descartada'?'bgr':'bgn';
     var done=Math.min(3,n.intentos||0),dots='',i;
     for(i=0;i<done;i++)dots+='<div class="dot dtr"></div>';
     for(i=done;i<3;i++)dots+='<div class="dot dte"></div>';
     var accion=n.estado_local==='resuelta'
       ?'<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--grn)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>'
-      :'<button class="btn bp bsm" onclick="sgnGest(\''+sgnEsc(n.order_id)+'\')">Gestionar</button>';
+      :n.estado_local==='descartada'
+        ?'<button class="btn bsm" onclick="sgnRestaurar(\''+sgnEsc(n.order_id)+'\')">Restaurar</button>'
+        :'<div style="display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap"><button class="btn bp bsm" onclick="sgnGest(\''+sgnEsc(n.order_id)+'\')">Gestionar</button><button class="btn bsm" title="No esta en Dropi" onclick="sgnDescartar(\''+sgnEsc(n.order_id)+'\')">Descartar</button></div>';
     rows+='<tr>'
       +'<td style="font-family:monospace;font-size:12px;font-weight:700;color:var(--navy)">#'+sgnEsc(n.order_id)+'</td>'
       +'<td style="font-size:12.5px">'+sgnEsc(n.tipo_novedad)+'</td>'
@@ -1611,7 +1632,7 @@ function sgnRenderTd(){
     +'<div class="card">'
     +'<div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap;padding:11px 14px;border-bottom:1px solid var(--bdr)">'
     +'<span style="font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.04em">Filtros</span>'
-    +'<select onchange="SGN.tdEstado=this.value;sgnRenderTd()" style="font-size:11.5px;padding:5px 9px;border:1px solid var(--bdr2);border-radius:var(--rs);background:var(--sur);color:var(--tx);font-family:inherit">'+['','pendiente','resuelta','en_revision','cas_abierto'].map(function(o){var lbl={"":"Estado: todos","pendiente":"Pendiente","resuelta":"Gestionada","en_revision":"En revision","cas_abierto":"CAS"}[o];return '<option value="'+o+'"'+((SGN.tdEstado||'')===o?' selected':'')+'>'+lbl+'</option>';}).join('')+'</select>'
+    +'<select onchange="SGN.tdEstado=this.value;sgnRenderTd()" style="font-size:11.5px;padding:5px 9px;border:1px solid var(--bdr2);border-radius:var(--rs);background:var(--sur);color:var(--tx);font-family:inherit">'+['','pendiente','resuelta','en_revision','cas_abierto','descartada'].map(function(o){var lbl={"":"Estado: todos","pendiente":"Pendiente","resuelta":"Gestionada","en_revision":"En revision","cas_abierto":"CAS","descartada":"Descartada (no en Dropi)"}[o];return '<option value="'+o+'"'+((SGN.tdEstado||'')===o?' selected':'')+'>'+lbl+'</option>';}).join('')+'</select>'
     +'<label style="font-size:11px;color:var(--t2)">Fecha orden:</label>'
     +'<input type="date" value="'+(SGN.tdFDesde||'')+'" onchange="SGN.tdFDesde=this.value;sgnRenderTd()" style="font-size:11.5px;padding:4px 8px;border:1px solid var(--bdr2);border-radius:var(--rs);background:var(--sur);color:var(--tx);font-family:inherit">'
     +'<span style="font-size:11px;color:var(--t3)">a</span>'
@@ -1842,8 +1863,8 @@ function sgnBuscar(){
   if(!hits.length){res.innerHTML='<div class="al ag" style="font-size:12px;margin-top:10px">Sin resultados en las novedades activas. (La busqueda cubre ordenes sincronizadas desde Dropi que siguen abiertas.)</div>';return;}
   var html='<div class="tw" style="margin-top:12px"><table><thead><tr><th>Orden</th><th>Cliente</th><th>Telefono</th><th>Tienda</th><th>Causal</th><th>Estado</th><th></th></tr></thead><tbody>';
   hits.forEach(function(n){
-    var estLbl={pendiente:'Pendiente',en_revision:'En revision',cas_abierto:'CAS abierto',resuelta:'Gestionada'}[n.estado_local]||n.estado_local;
-    var badge=n.estado_local==='pendiente'?'bg':n.estado_local==='en_revision'?'bn':n.estado_local==='cas_abierto'?'br':'bgn';
+    var estLbl={pendiente:'Pendiente',en_revision:'En revision',cas_abierto:'CAS abierto',resuelta:'Gestionada',descartada:'Descartada (no en Dropi)'}[n.estado_local]||n.estado_local;
+    var badge=n.estado_local==='pendiente'?'bg':n.estado_local==='en_revision'?'bn':n.estado_local==='cas_abierto'?'br':n.estado_local==='descartada'?'bgr':'bgn';
     html+='<tr><td style="font-family:monospace;font-weight:700;color:var(--navy)">#'+sgnEsc(n.order_id)+'</td>'
       +'<td>'+sgnEsc(n.client_name||'&#x2014;')+'</td><td style="font-size:12px">'+sgnEsc(n.phone||'&#x2014;')+'</td>'
       +'<td style="font-size:12px">'+sgnEsc(n.store_name)+'</td><td style="font-size:12px">'+sgnEsc(n.tipo_novedad||'')+'</td>'
@@ -3061,42 +3082,4 @@ guardar = async function(){
       solucion=v('sr-sol');resolver=true;
       payload={solution:solucion,direccionConfirma:v('sr-dir'),nombreConfirma:v('sr-nom')||n.client_name||'',selectValueConfirma:v('sr-sv')||'1',tipo_solucion:'volver_a_ofrecer'};
     } else if(gSol==='return'){
-      motivo=v('sr-mot');solucion=v('sr-rsol');resolver=true;
-      payload={solution:solucion,motivo_devolucion:motivo,tipo_solucion:'return'};
-    } else {
-      // sin solucion Dropi -> no se debe guardar (la novedad sigue vigente)
-      alert('Esta gestion exige una Solucion Dropi. Elige una opcion real de Dropi (recomendado) o una opcion manual.');
-      return;
-    }
-  }
-  var b=document.getElementById('bguard');
-  if(b){b.disabled=true;b.textContent='Guardando...';}
-
-  var resolved=null;
-  if(SGN.resolveEnDropi&&resolver){
-    resolved=await sgnFn('resolve-novedad',{
-      order_id:n.order_id,variante:n.variante||'C',
-      opcion:(payload&&payload.opcion)?payload.opcion:undefined,
-      solution_text:solucion||'',
-      direccion_corregida:(payload&&(payload.direccion_corregida||payload.direccionConfirma))||undefined,
-      solution_payload:payload
-    });
-    if(!(resolved&&resolved.ok)){
-      var motivo=(resolved&&(resolved.reason||resolved.error))||'sin detalle';
-      alert('⚠️ Dropi NO aplico la solucion: la novedad queda PENDIENTE para gestion manual.\n\nMotivo de Dropi: '+motivo+'\n\n(La nota interna y el intento si quedan registrados.)');
-    }
-  }
-
-  var g=await SGN.client.from('gestiones').insert({
-    order_id:n.order_id,store_name:n.store_name,agente_id:SGN.profile.id,
-    accion:acMap[gAc],comentario:comentario,nota_revision:nota,motivo_devolucion:motivo,
-    solucion_dropi:solucion,variante:n.variante,solution_payload:payload,
-    resolved_in_dropi:resolver?(resolved?!!resolved.ok:null):null
-  });
-  if(g.error){
-    alert('Error al guardar la gestion: '+g.error.message);
-    if(b){b.disabled=false;b.innerHTML='&#x2713; Guardar gestion';}
-    return;
-  }
-  var resolvioOk=resolver&&resolved&&resolved.ok;
-  var nuevo=gAc==='rev'?'en_revi
+      motivo=v('sr
