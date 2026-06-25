@@ -1337,6 +1337,7 @@ function aplicarMasiva(){
 document.addEventListener('keydown',function(e){if(e.key==='Escape')['mog','mos','moag'].forEach(function(id){var el=document.getElementById(id);if(el)el.classList.remove('open');});});
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 // ════════════════════════════════════════════════════════════
 // SGN · Integración con Supabase (datos reales) — Fenix Ventures
@@ -2512,6 +2513,159 @@ sgnAudConsultar = function(){
   sgnRenderAud();
 };
 
+// ── Panel REPORTES (real, genera Excel con SheetJS) ──
+sgnRenderReportes = async function(){
+  var el=document.getElementById('preportes');if(!el)return;
+  function iso(d){return d.toISOString().slice(0,10);}
+  if(!SGN.repDesde){SGN.repHasta=iso(new Date());SGN.repDesde=iso(new Date(Date.now()-29*864e5));}
+  if(!(SGN.users&&SGN.users.length)){var pr=await SGN.client.from('profiles').select('id,full_name,role').limit(500);SGN.users=pr.data||[];}
+  if(!(SGN.stores&&SGN.stores.length)){var st=await SGN.client.from('stores').select('store_name').order('store_name').limit(2000);SGN.stores=st.data||[];}
+  var ags=(SGN.users||[]).filter(function(u){return u.role==='agente';});
+  var tiendas=(SGN.stores||[]).slice();
+  var METRICAS=[['gestiones_agente','Gestiones por agente'],['detalle_gestiones','Detalle de gestiones'],['novedades_tienda','Novedades por tienda'],['causales','Causales recurrentes'],['intentos3','Ordenes con 3+ intentos'],['auditorias','Auditorias'],['dia_dia','Historial dia a dia']];
+  if(!SGN.repMetricas)SGN.repMetricas=METRICAS.map(function(m){return m[0];});
+  var metHTML=METRICAS.map(function(m){var ck=SGN.repMetricas.indexOf(m[0])>-1?' checked':'';return '<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--tx);padding:4px 0"><input type="checkbox" data-met="'+m[0]+'"'+ck+' onchange="sgnRepToggleMet(this)" style="accent-color:var(--navy);width:15px;height:15px"> '+m[1]+'</label>';}).join('');
+  var agOpts='<option value="">Todos los agentes</option>'+ags.map(function(a){return '<option value="'+a.id+'"'+(SGN.repAgente===a.id?' selected':'')+'>'+sgnEsc(a.full_name||a.id)+'</option>';}).join('');
+  var tiOpts='<option value="">Todas las tiendas</option>'+tiendas.map(function(t){return '<option value="'+sgnEsc(t.store_name)+'"'+(SGN.repTienda===t.store_name?' selected':'')+'>'+sgnEsc(t.store_name)+'</option>';}).join('');
+  var estOpts=[['','Todos los estados'],['pendiente','Pendiente'],['en_revision','En revision'],['cas_abierto','CAS'],['resuelta','Resueltas'],['cerrada_broker','Cerradas en Dropi'],['descartada','Descartada']].map(function(o){return '<option value="'+o[0]+'"'+(SGN.repEstado===o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('');
+  var inp='font-size:12px;padding:6px 10px;border:1px solid var(--bdr2);border-radius:var(--rs);background:var(--sur);color:var(--tx);font-family:inherit';
+  el.innerHTML=
+    '<div class="pt">Reportes</div><div class="ps">Genera un Excel con los datos reales del periodo y los filtros que elijas</div>'
+    +'<div class="repbts"><div class="repbt act" onclick="sgnRepTab(this,0)">Generador</div><div class="repbt" onclick="sgnRepTab(this,1)">Historial</div></div>'
+    +'<div id="rep0"><div class="card cb" style="max-width:680px;display:flex;flex-direction:column;gap:13px">'
+    +'<div class="tf"><div class="fld"><label>Desde</label><input type="date" id="rep-desde" value="'+SGN.repDesde+'" style="'+inp+'"></div><div class="fld"><label>Hasta</label><input type="date" id="rep-hasta" value="'+SGN.repHasta+'" style="'+inp+'"></div></div>'
+    +'<div class="tf"><div class="fld"><label>Agente</label><select id="rep-agente" style="'+inp+';width:100%">'+agOpts+'</select></div><div class="fld"><label>Tienda</label><select id="rep-tienda" style="'+inp+';width:100%">'+tiOpts+'</select></div></div>'
+    +'<div class="fld"><label>Estado de novedad</label><select id="rep-estado" style="'+inp+';width:100%">'+estOpts+'</select></div>'
+    +'<div class="fld"><label>Metricas a incluir (una hoja por metrica + Resumen)</label><div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:6px">'+metHTML+'</div></div>'
+    +'<div id="rep-msg"></div>'
+    +'<button class="btn bp" id="rep-gen" style="align-self:flex-start;padding:9px 20px" onclick="sgnGenerarReporte()">&#x2B07; Generar y descargar Excel</button>'
+    +'</div></div>'
+    +'<div id="rep1" style="display:none"><div class="card"><div class="tw"><table><thead><tr><th>Reporte</th><th>Periodo</th><th>Metricas</th><th>Generado por</th><th>Fecha</th><th>Accion</th></tr></thead><tbody id="rep-hist"><tr><td colspan="6" style="text-align:center;padding:18px;color:var(--t3);font-size:13px">Cargando...</td></tr></tbody></table></div></div></div>';
+  sgnRepHistorial();
+};
+sgnRepTab = function(elm,i){var p=document.getElementById('preportes');if(!p)return;p.querySelectorAll('.repbt').forEach(function(b){b.classList.remove('act');});elm.classList.add('act');document.getElementById('rep0').style.display=i===0?'':'none';document.getElementById('rep1').style.display=i===1?'':'none';if(i===1)sgnRepHistorial();};
+sgnRepToggleMet = function(chk){var id=chk.getAttribute('data-met');SGN.repMetricas=SGN.repMetricas||[];if(chk.checked){if(SGN.repMetricas.indexOf(id)===-1)SGN.repMetricas.push(id);}else{SGN.repMetricas=SGN.repMetricas.filter(function(x){return x!==id;});}};
+
+async function sgnRepFetchAll(table, sel, applyFilters){
+  var out=[],off=0;
+  while(true){
+    var q=SGN.client.from(table).select(sel);
+    q=applyFilters(q).range(off,off+999);
+    var r=await q;
+    if(r.error){console.warn(table,r.error.message);break;}
+    var d=r.data||[];out=out.concat(d);if(d.length<1000)break;off+=1000;if(out.length>60000)break;
+  }
+  return out;
+}
+
+sgnGenerarReporte = async function(){
+  if(typeof XLSX==='undefined'){alert('No se pudo cargar el generador de Excel (XLSX). Revisa tu conexion e intenta de nuevo.');return;}
+  var msg=document.getElementById('rep-msg');var btn=document.getElementById('rep-gen');
+  var desde=document.getElementById('rep-desde').value||SGN.repDesde;
+  var hasta=document.getElementById('rep-hasta').value||SGN.repHasta;
+  var agente=document.getElementById('rep-agente').value||'';
+  var tienda=document.getElementById('rep-tienda').value||'';
+  var estado=document.getElementById('rep-estado').value||'';
+  SGN.repDesde=desde;SGN.repHasta=hasta;SGN.repAgente=agente;SGN.repTienda=tienda;SGN.repEstado=estado;
+  var mets=SGN.repMetricas||[];
+  if(btn){btn.disabled=true;btn.textContent='Generando...';}
+  if(msg)msg.innerHTML='';
+  try{
+    var gest=await sgnRepFetchAll('gestiones','agente_id,accion,created_at,order_id,store_name,resolved_in_dropi,comentario,nota_revision,motivo_devolucion,solucion_dropi',function(q){q=q.gte('created_at',desde+'T00:00:00').lte('created_at',hasta+'T23:59:59');if(agente)q=q.eq('agente_id',agente);if(tienda)q=q.eq('store_name',tienda);return q;});
+    var novs=await sgnRepFetchAll('novedades','order_id,store_name,estado_local,tipo_novedad,intentos,broker_created_at',function(q){if(tienda)q=q.eq('store_name',tienda);if(estado)q=q.eq('estado_local',estado);return q;});
+    var auds=await sgnRepFetchAll('auditorias','created_at,store_name,order_id,tipo,auditor_nombre,comentario',function(q){q=q.gte('created_at',desde+'T00:00:00').lte('created_at',hasta+'T23:59:59');if(tienda)q=q.eq('store_name',tienda);return q;});
+    var prof=(SGN.users&&SGN.users.length)?SGN.users:((await SGN.client.from('profiles').select('id,full_name').limit(500)).data||[]);
+    var agById={};prof.forEach(function(u){agById[u.id]=u.full_name||u.id;});
+    function agName(id){return agById[id]||id||'';}
+    function fdt(s){if(!s)return '';var d=new Date(s);return d.toLocaleDateString('es-CO')+' '+d.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'});}
+    var TIPOS=['contacto','sin_contacto','devolucion','cas','transportadora','en_revision'];
+    var wb=XLSX.utils.book_new();
+    function add(name,aoa){var ws=XLSX.utils.aoa_to_sheet(aoa);XLSX.utils.book_append_sheet(wb,ws,name.slice(0,31));}
+    var activas=novs.filter(function(n){return ['pendiente','en_revision','cas_abierto'].indexOf(n.estado_local)>-1;}).length;
+    var dropiN=gest.filter(function(g){return g.resolved_in_dropi===true||g.resolved_in_dropi===false;}).length;
+    var dropiOk=gest.filter(function(g){return g.resolved_in_dropi===true;}).length;
+    add('Resumen',[
+      ['SGN - Reporte de gestion'],
+      ['Periodo',desde+' a '+hasta],
+      ['Agente',agente?agName(agente):'Todos'],
+      ['Tienda',tienda||'Todas'],
+      ['Estado',estado||'Todos'],
+      ['Generado',fdt(new Date().toISOString())+' por '+((SGN.profile&&SGN.profile.full_name)||'')],
+      [],
+      ['Gestiones en el periodo',gest.length],
+      ['Novedades activas (filtro)',activas],
+      ['% resuelto en Dropi (1er intento)',dropiN?Math.round(dropiOk/dropiN*100)+'%':'-'],
+      ['Auditorias en el periodo',auds.length]
+    ]);
+    if(mets.indexOf('gestiones_agente')>-1){
+      var byAg={};gest.forEach(function(g){var k=g.agente_id||'-';if(!byAg[k]){byAg[k]={t:0,dn:0,dok:0};TIPOS.forEach(function(t){byAg[k][t]=0;});}byAg[k].t++;if(TIPOS.indexOf(g.accion)>-1)byAg[k][g.accion]++;if(g.resolved_in_dropi===true||g.resolved_in_dropi===false){byAg[k].dn++;if(g.resolved_in_dropi===true)byAg[k].dok++;}});
+      var aoa=[['Agente','Total','Contacto','Sin contacto','Devolver','CAS','Transportadora','En revision','% Dropi 1er']];
+      Object.keys(byAg).forEach(function(k){var b=byAg[k];aoa.push([agName(k),b.t,b.contacto,b.sin_contacto,b.devolucion,b.cas,b.transportadora,b.en_revision,b.dn?Math.round(b.dok/b.dn*100)+'%':'-']);});
+      add('Gestiones por agente',aoa);
+    }
+    if(mets.indexOf('detalle_gestiones')>-1){
+      var aoa2=[['Fecha','Orden','Tienda','Agente','Accion','Resuelto en Dropi','Comentario']];
+      gest.forEach(function(g){aoa2.push([fdt(g.created_at),String(g.order_id||''),g.store_name||'',agName(g.agente_id),g.accion||'',g.resolved_in_dropi===true?'Si':(g.resolved_in_dropi===false?'No':''),g.comentario||g.nota_revision||g.motivo_devolucion||g.solucion_dropi||'']);});
+      add('Detalle de gestiones',aoa2);
+    }
+    if(mets.indexOf('novedades_tienda')>-1){
+      var byT={};novs.forEach(function(n){var k=n.store_name||'-';if(!byT[k])byT[k]={act:0,pendiente:0,en_revision:0,cas_abierto:0,resuelta:0,cerrada_broker:0,descartada:0};if(byT[k][n.estado_local]!==undefined)byT[k][n.estado_local]++;if(['pendiente','en_revision','cas_abierto'].indexOf(n.estado_local)>-1)byT[k].act++;});
+      var aoa3=[['Tienda','Activas','Pendiente','En revision','CAS','Resueltas','Cerradas Dropi','Descartadas']];
+      Object.keys(byT).sort().forEach(function(k){var b=byT[k];aoa3.push([k,b.act,b.pendiente,b.en_revision,b.cas_abierto,b.resuelta,b.cerrada_broker,b.descartada]);});
+      add('Novedades por tienda',aoa3);
+    }
+    if(mets.indexOf('causales')>-1){
+      var byC={};novs.forEach(function(n){var k=n.tipo_novedad||'-';byC[k]=(byC[k]||0)+1;});
+      var arrc=Object.keys(byC).map(function(k){return [k,byC[k]];}).sort(function(a,b){return b[1]-a[1];});
+      add('Causales recurrentes',[['Causal','Cantidad']].concat(arrc));
+    }
+    if(mets.indexOf('intentos3')>-1){
+      var aoa4=[['Orden','Tienda','Intentos','Estado']];
+      novs.filter(function(n){return (n.intentos||0)>=3;}).sort(function(a,b){return (b.intentos||0)-(a.intentos||0);}).forEach(function(n){aoa4.push([String(n.order_id||''),n.store_name||'',n.intentos||0,n.estado_local||'']);});
+      add('Ordenes 3+ intentos',aoa4);
+    }
+    if(mets.indexOf('auditorias')>-1){
+      var aoa5=[['Fecha','Tienda','Orden','Tipo','Audita','Comentario']];
+      auds.forEach(function(a){aoa5.push([fdt(a.created_at),a.store_name||'',String(a.order_id||''),a.tipo||'',a.auditor_nombre||'',a.comentario||'']);});
+      add('Auditorias',aoa5);
+    }
+    if(mets.indexOf('dia_dia')>-1){
+      var byD={};gest.forEach(function(g){var k=String(g.created_at||'').slice(0,10);if(k)byD[k]=(byD[k]||0)+1;});
+      var arrd=Object.keys(byD).sort().map(function(k){return [k,byD[k]];});
+      add('Historial dia a dia',[['Fecha','Gestiones']].concat(arrd));
+    }
+    var fname='Reporte_SGN_'+desde+'_a_'+hasta+'.xlsx';
+    XLSX.writeFile(wb,fname);
+    var titulo='Reporte '+desde+' a '+hasta+(tienda?(' - '+tienda):'')+(agente?(' - '+agName(agente)):'');
+    await SGN.client.from('reportes').insert({titulo:titulo,periodo_desde:desde,periodo_hasta:hasta,filtros:{agente:agente,tienda:tienda,estado:estado},metricas:mets.join(','),generado_por_id:SGN.profile.id,generado_por_nombre:(SGN.profile&&SGN.profile.full_name)||''});
+    if(msg)msg.innerHTML='<div class="al ag" style="font-size:12px">&#x2713; Excel generado y descargado: '+sgnEsc(fname)+'</div>';
+  }catch(e){
+    if(msg)msg.innerHTML='<div class="al ar" style="font-size:12px">Error al generar: '+sgnEsc(String((e&&e.message)||e))+'</div>';
+  }
+  if(btn){btn.disabled=false;btn.innerHTML='&#x2B07; Generar y descargar Excel';}
+};
+
+sgnRepHistorial = async function(){
+  var tb=document.getElementById('rep-hist');if(!tb)return;
+  var r=await SGN.client.from('reportes').select('*').order('created_at',{ascending:false}).limit(200);
+  var rows=r.data||[];
+  if(!rows.length){tb.innerHTML='<tr><td colspan="6" style="text-align:center;padding:18px;color:var(--t3);font-size:13px">Aun no hay reportes generados.</td></tr>';return;}
+  tb.innerHTML=rows.map(function(x){
+    var f=x.created_at?new Date(x.created_at).toLocaleDateString('es-CO',{day:'2-digit',month:'2-digit',year:'2-digit'})+' '+new Date(x.created_at).toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}):'';
+    var nMet=(x.metricas||'').split(',').filter(Boolean).length+1;
+    return '<tr><td style="font-size:12.5px;color:var(--tx)">'+sgnEsc(x.titulo||'Reporte')+'</td><td style="font-size:12px;color:var(--t2)">'+sgnEsc((x.periodo_desde||'')+' a '+(x.periodo_hasta||''))+'</td><td style="font-size:12px;color:var(--t2)">'+nMet+' hojas</td><td style="font-size:12px;color:var(--t2)">'+sgnEsc(x.generado_por_nombre||'-')+'</td><td style="font-size:11.5px;color:var(--t3)">'+f+'</td><td><button class="btn bsm" onclick="sgnRepRedescargar(\''+x.id+'\')">Regenerar</button></td></tr>';
+  }).join('');
+};
+sgnRepRedescargar = async function(id){
+  var r=await SGN.client.from('reportes').select('*').eq('id',id).single();
+  if(r.error||!r.data){alert('No se encontro el reporte.');return;}
+  var x=r.data;var f=x.filtros||{};
+  SGN.repDesde=x.periodo_desde;SGN.repHasta=x.periodo_hasta;SGN.repAgente=f.agente||'';SGN.repTienda=f.tienda||'';SGN.repEstado=f.estado||'';SGN.repMetricas=(x.metricas||'').split(',').filter(Boolean);
+  await sgnRenderReportes();
+  setTimeout(function(){sgnGenerarReporte();},500);
+};
+
+
 // ── Calendario REAL (reemplaza el demo) ──
 sgnRenderCal = async function(){
   var el=document.getElementById('pcal');if(!el)return;
@@ -2580,6 +2734,7 @@ renderPg = function(pg){
   if(pg==='anl'){sgnRenderAnl();return;}
   if(pg==='prod'){sgnRenderProd();return;}
   if(pg==='aud'){sgnRenderAud();return;}
+  if(pg==='reportes'){sgnRenderReportes();return;}
   if(pg==='cal'){sgnRenderCal();return;}
   if(pg==='tiendas'){
     sgnRenderBase('tiendas');
