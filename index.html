@@ -319,6 +319,7 @@ tr:hover td{background:rgba(0,0,0,.012)}
       <div id="preportes" class="page"></div>
       <div id="paud" class="page"></div>
       <div id="pinicio" class="page"></div>
+      <div id="pseg" class="page"></div>
     </div>
   </div>
 </div>
@@ -402,6 +403,7 @@ function doLogout(){
 // ── SIDEBAR ──
 function svgI(d){return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">'+d+'</svg>';}
 var IC={
+  seg:svgI('<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>'),
   inicio:svgI('<rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/>'),
   cal:svgI('<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>'),
   tiendas:svgI('<path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>'),
@@ -417,7 +419,7 @@ function buildSB(){
   var isAg=role==='ag';
   var items=isAg
     ?[['cal','Calendario'],['tiendas','Tiendas'],['rend','Mi rendimiento']]
-    :[['inicio','Inicio'],['cal','Calendario'],['tiendas','Tiendas'],['prod','Metricas'],['aud','Auditoria'],['reportes','Reportes'],['ajustes','Ajustes']];
+    :[['inicio','Inicio'],['cal','Calendario'],['tiendas','Tiendas'],['prod','Metricas'],['aud','Auditoria'],['seg','Seguimiento'],['reportes','Reportes'],['ajustes','Ajustes']];
   var html='<div class="sblbl">Principal</div>';
   items.forEach(function(item){
     html+='<div class="ni" id="ni-'+item[0]+'" onclick="goPage(\''+item[0]+'\')">'+(IC[item[0]]||IC.cal)+item[1]+'</div>';
@@ -1427,7 +1429,7 @@ doLogout = async function(){
 buildSB = function(){
   var items = role==='ag'
     ? [['tiendas','Tiendas'],['rend','Mi rendimiento'],['cal','Calendario']]
-    : [['inicio','Inicio'],['tiendas','Tiendas'],['rend','Mi rendimiento'],['prod','Metricas'],['aud','Auditoria'],['reportes','Reportes'],['ajustes','Ajustes'],['cal','Calendario']];
+    : [['inicio','Inicio'],['tiendas','Tiendas'],['rend','Mi rendimiento'],['prod','Metricas'],['aud','Auditoria'],['seg','Seguimiento'],['reportes','Reportes'],['ajustes','Ajustes'],['cal','Calendario']];
   var html='<div class="sblbl">Principal</div>';
   items.forEach(function(it){html+='<div class="ni" id="ni-'+it[0]+'" onclick="goPage(\''+it[0]+'\')">'+(IC[it[0]]||IC.cal)+it[1]+'</div>';});
   document.getElementById('sbn').innerHTML=html;
@@ -1621,10 +1623,22 @@ async function sgnSMoOk(tp,id){
 }
 
 // ── DETALLE DE TIENDA (novedades reales) ──
+sgnSegCell = function(n){
+  if(n.estado_local!=='en_revision'&&n.estado_local!=='cas_abierto')return '';
+  var lg=(SGN.tdLastGest||{})[String(n.order_id)];
+  var dd=lg?Math.floor((Date.now()-new Date(lg.at).getTime())/864e5):null;
+  var venc=dd!==null&&dd>=3;
+  var line='<div style="font-size:10px;margin-top:3px;font-weight:600;color:'+(venc?'var(--red)':'var(--t3)')+'">'+(dd===null?'sin seguimiento aun':('en este estado hace '+dd+'d'))+(venc?' &middot; VENCIDO':'')+'</div>';
+  var nota=(lg&&lg.nota)?'<div style="font-size:10px;color:var(--t3);margin-top:1px;max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+sgnEsc(lg.nota)+'">&#x1F4DD; '+sgnEsc(lg.nota)+'</div>':'';
+  return line+nota;
+};
 function sgnRenderTd(){
   var el=document.getElementById('ptd');if(!el)return;
   var t=null;TIENDAS.forEach(function(x){if(x.id===SGN.curStoreId)t=x;});
   if(!t){el.innerHTML='<div class="pt">Detalle de tienda</div><div class="ps">Selecciona una tienda desde el modulo Tiendas.</div>';return;}
+  if(SGN.tdGestStore!==t.id){SGN.tdGestStore=t.id;SGN.tdLastGest={};
+    SGN.client.from('gestiones').select('order_id,created_at,nota_revision,comentario,solucion_dropi,motivo_devolucion').eq('store_name',t.n).order('created_at',{ascending:false}).limit(8000).then(function(r){var m={};(r.data||[]).forEach(function(g){var k=String(g.order_id);if(!m[k])m[k]={at:g.created_at,nota:g.nota_revision||g.comentario||g.solucion_dropi||g.motivo_devolucion||''};});SGN.tdLastGest=m;if(typeof curPg!=='undefined'&&curPg==='td')sgnRenderTd();});
+  }
   var novsAll=SGN.novedades.filter(function(n){return n.store_id===t.id;});
   var nPend=0,nRev=0,nCas=0,nRes=0;
   novsAll.forEach(function(n){
@@ -1679,7 +1693,7 @@ function sgnRenderTd(){
       +'<td><div class="cc"><span class="cn">'+sgnEsc(n.client_name||'—')+'</span><span class="ctel">'+sgnEsc(n.phone||'')+'</span></div></td>'
       +'<td style="font-size:11.5px;color:var(--t2)">'+sgnEsc(n.direccion_actual||'—')+'</td>'
       +'<td><div class="dots">'+dots+'</div></td>'
-      +'<td><span class="badge '+badge+'">'+estLbl+'</span>'+((n.assigned_to&&n.estado_local!=='resuelta')?'<div style="font-size:10px;font-weight:600;margin-top:3px;color:'+(n.assigned_to===SGN.profile.id?'var(--grn)':'var(--amb)')+'">🔒 '+(n.assigned_to===SGN.profile.id?'En gestion (tu)':'En gestion')+'</div>':'')+'</td>'
+      +'<td><span class="badge '+badge+'">'+estLbl+'</span>'+sgnSegCell(n)+((n.assigned_to&&n.estado_local!=='resuelta')?'<div style="font-size:10px;font-weight:600;margin-top:3px;color:'+(n.assigned_to===SGN.profile.id?'var(--grn)':'var(--amb)')+'">🔒 '+(n.assigned_to===SGN.profile.id?'En gestion (tu)':'En gestion')+'</div>':'')+'</td>'
       +'<td>'+accion+'</td>'
       +'</tr>';
   });
@@ -1877,7 +1891,7 @@ sgnEnter = async function(user){
 buildSB = function(){
   var items = role==='ag'
     ? [['tiendas','Tiendas'],['rend','Mi rendimiento'],['cal','Calendario']]
-    : [['inicio','Inicio'],['tiendas','Tiendas'],['prod','Metricas'],['aud','Auditoria'],['reportes','Reportes'],['ajustes','Ajustes'],['cal','Calendario']];
+    : [['inicio','Inicio'],['tiendas','Tiendas'],['prod','Metricas'],['aud','Auditoria'],['seg','Seguimiento'],['reportes','Reportes'],['ajustes','Ajustes'],['cal','Calendario']];
   var html='<div class="sblbl">Principal</div>';
   items.forEach(function(it){html+='<div class="ni" id="ni-'+it[0]+'" onclick="goPage(\''+it[0]+'\')">'+(IC[it[0]]||IC.cal)+it[1]+'</div>';});
   document.getElementById('sbn').innerHTML=html;
@@ -2598,6 +2612,66 @@ sgnAudConsultar = function(){
   sgnRenderAud();
 };
 
+// ── Cola global de SEGUIMIENTO (Revision / CAS) ──
+sgnRenderSeguimiento = async function(){
+  var el=document.getElementById('pseg');if(!el)return;
+  el.innerHTML='<div class="pt">&#x1F501; Seguimiento (Revision / CAS)</div><div class="ps">Novedades en espera. "Vencido" = mas de 3 dias sin ningun seguimiento.</div><div id="seg-body"><p class="ps">Cargando seguimiento...</p></div>';
+  var now=Date.now(),DAY=864e5;
+  var novs=[],off=0;
+  while(true){var r=await SGN.client.from('novedades').select('order_id,store_id,store_name,estado_local,client_name,broker_created_at,intentos').in('estado_local',['en_revision','cas_abierto']).range(off,off+999);var d=r.data||[];novs=novs.concat(d);if(d.length<1000)break;off+=1000;if(novs.length>30000)break;}
+  var ids=novs.map(function(n){return String(n.order_id);});
+  var lastG={};
+  for(var i=0;i<ids.length;i+=200){var ch=ids.slice(i,i+200);var g=await SGN.client.from('gestiones').select('order_id,created_at,nota_revision,comentario,solucion_dropi,motivo_devolucion').in('order_id',ch).order('created_at',{ascending:false}).limit(5000);(g.data||[]).forEach(function(x){var k=String(x.order_id);if(!lastG[k])lastG[k]={at:x.created_at,nota:x.nota_revision||x.comentario||x.solucion_dropi||x.motivo_devolucion||''};});}
+  novs.forEach(function(n){var lg=lastG[String(n.order_id)];n._lg=lg;n._dias=lg?Math.floor((now-new Date(lg.at).getTime())/DAY):(n.broker_created_at?Math.floor((now-new Date(n.broker_created_at).getTime())/DAY):0);n._venc=n._dias>=3;});
+  novs.sort(function(a,b){return b._dias-a._dias;});
+  var f=SGN.segFiltro||'';
+  var shown=novs.filter(function(n){if(f==='rev')return n.estado_local==='en_revision';if(f==='cas')return n.estado_local==='cas_abierto';if(f==='venc')return n._venc;return true;});
+  var nRev=novs.filter(function(n){return n.estado_local==='en_revision';}).length;
+  var nCas=novs.filter(function(n){return n.estado_local==='cas_abierto';}).length;
+  var nVenc=novs.filter(function(n){return n._venc;}).length;
+  var trs=shown.map(function(n){
+    var col=n._dias>=7?'br':n._dias>=3?'bg':'bgn';
+    var estLbl=n.estado_local==='cas_abierto'?'CAS':'En revision';
+    var f2=n._lg?new Date(n._lg.at).toLocaleDateString('es-CO',{day:'2-digit',month:'2-digit',year:'2-digit'}):'sin gestion';
+    return '<tr><td style="font-size:12.5px">'+sgnEsc(n.store_name||'')+'</td><td style="font-family:monospace;color:var(--navy)">#'+sgnEsc(String(n.order_id))+'</td><td><span class="badge '+(n.estado_local==='cas_abierto'?'br':'bn')+'">'+estLbl+'</span></td><td style="white-space:nowrap"><span class="badge '+col+'">'+n._dias+'d</span>'+(n._venc?' <span class="badge br">Vencido</span>':'')+'</td><td style="font-size:11.5px;color:var(--t2);white-space:nowrap">'+f2+'</td><td style="font-size:11.5px;color:var(--t2)">'+sgnEsc((n._lg&&n._lg.nota)||'—')+'</td><td><div style="display:flex;gap:5px;flex-wrap:wrap"><button class="btn bp bsm" onclick="sgnGest(\''+sgnEsc(n.order_id)+'\')">Gestionar</button><button class="btn bsm" onclick="sgnSegAvance(\''+sgnEsc(n.order_id)+'\',\''+n.estado_local+'\')">Avance</button><button class="btn bgn2 bsm" onclick="sgnSegResolver(\''+sgnEsc(n.order_id)+'\')">Resolver</button><button class="btn bsm" onclick="sgnSegPendiente(\''+sgnEsc(n.order_id)+'\')">A pendiente</button></div></td></tr>';
+  }).join('');
+  if(!trs)trs='<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--t3);font-size:13px">No hay novedades en seguimiento. &#x1F389;</td></tr>';
+  function fbtn(v,l){return '<button class="btn '+(f===v?'bp':'')+' bsm" onclick="SGN.segFiltro=\''+v+'\';sgnRenderSeguimiento()">'+l+'</button>';}
+  var body=document.getElementById('seg-body');if(!body)return;
+  body.innerHTML='<div class="sg" style="margin-bottom:14px"><div class="sc" style="border-top:2px solid var(--navy)"><div class="sn">'+nRev+'</div><div class="sl">En revision</div></div><div class="sc" style="border-top:2px solid var(--red)"><div class="sn" style="color:var(--red)">'+nCas+'</div><div class="sl">CAS abiertos</div></div><div class="sc" style="border-top:2px solid var(--red)"><div class="sn" style="color:var(--red)">'+nVenc+'</div><div class="sl">Vencidos (3+ dias)</div></div></div>'
+    +'<div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">'+fbtn('','Todas')+fbtn('rev','En revision')+fbtn('cas','CAS')+fbtn('venc','Vencidas')+'</div>'
+    +'<div class="card"><div class="tw"><table><thead><tr><th>Tienda</th><th>Orden</th><th>Estado</th><th>Dias sin seguimiento</th><th>Ultima revision</th><th>Solicitud / nota</th><th>Acciones</th></tr></thead><tbody>'+trs+'</tbody></table></div></div>';
+};
+sgnSegAvance = async function(orderId, estado){
+  var nota=prompt('Registrar avance de seguimiento (la novedad sigue en '+(estado==='cas_abierto'?'CAS':'revision')+'). Escribe que paso con la solicitud:');
+  if(nota===null)return;nota=(nota||'').trim();if(!nota){alert('Escribe una nota de avance.');return;}
+  var n=null;SGN.novedades.forEach(function(x){if(String(x.order_id)===String(orderId))n=x;});
+  var acc=estado==='cas_abierto'?'cas':'en_revision';
+  var r=await SGN.client.from('gestiones').insert({order_id:orderId,store_name:n?n.store_name:'',agente_id:SGN.profile.id,accion:acc,nota_revision:nota,comentario:nota});
+  if(r.error){alert('No se pudo registrar el avance: '+r.error.message);return;}
+  alert('Avance registrado. El contador de seguimiento se reinicia a 0 dias.');
+  sgnRenderSeguimiento();
+};
+sgnSegResolver = async function(orderId){
+  if(!confirm('Marcar la orden #'+orderId+' como RESUELTA (cierra el seguimiento)?'))return;
+  var n=null;SGN.novedades.forEach(function(x){if(String(x.order_id)===String(orderId))n=x;});
+  var r=await SGN.client.from('novedades').update({estado_local:'resuelta',assigned_to:null}).eq('order_id',orderId);
+  if(r.error){alert('No se pudo: '+r.error.message);return;}
+  await SGN.client.from('gestiones').insert({order_id:orderId,store_name:n?n.store_name:'',agente_id:SGN.profile.id,accion:'en_revision',nota_revision:'Cerrado desde Seguimiento'}).then(function(){},function(){});
+  SGN.novedades.forEach(function(x){if(String(x.order_id)===String(orderId))x.estado_local='resuelta';});
+  if(typeof sgnBuildTiendas==='function')sgnBuildTiendas();
+  sgnRenderSeguimiento();
+};
+sgnSegPendiente = async function(orderId){
+  if(!confirm('Devolver la orden #'+orderId+' a PENDIENTE para volver a gestionarla?'))return;
+  var r=await SGN.client.from('novedades').update({estado_local:'pendiente'}).eq('order_id',orderId);
+  if(r.error){alert('No se pudo: '+r.error.message);return;}
+  SGN.novedades.forEach(function(x){if(String(x.order_id)===String(orderId))x.estado_local='pendiente';});
+  if(typeof sgnBuildTiendas==='function')sgnBuildTiendas();
+  sgnRenderSeguimiento();
+};
+
+
 // ── Dashboard de INICIO (admin/supervisor) ──
 sgnRenderInicio = async function(){
   var el=document.getElementById('pinicio');if(!el)return;
@@ -2610,6 +2684,7 @@ sgnRenderInicio = async function(){
   novs.forEach(function(n){var d=n.broker_created_at?Math.floor((now-new Date(n.broker_created_at).getTime())/DAY):0;if(d>=7){rojo++;rojas[n.store_name]=(rojas[n.store_name]||0)+1;if(n.store_id)rojasId[n.store_name]=n.store_id;}});
   var topRojas=Object.keys(rojas).map(function(k){return [k,rojas[k]];}).sort(function(a,b){return b[1]-a[1];}).slice(0,8);
   var reinc=novs.filter(function(n){return (n.intentos||0)>=2;}).length;var reincPct=activas?Math.round(reinc/activas*100):0;
+  var enSeg=novs.filter(function(n){return n.estado_local==='en_revision'||n.estado_local==='cas_abierto';}).length;
   var g=await SGN.client.from('gestiones').select('resolved_in_dropi').gte('created_at',hoy+'T00:00:00').lte('created_at',hoy+'T23:59:59').limit(20000);
   var gh=g.data||[];var gestHoy=gh.length;
   var dN=gh.filter(function(x){return x.resolved_in_dropi===true||x.resolved_in_dropi===false;}).length;
@@ -2630,9 +2705,9 @@ sgnRenderInicio = async function(){
     +'<div class="sc" style="border-top:2px solid var(--grn)"><div class="sn" style="color:var(--grn)">'+pct1er+'%</div><div class="sl">Dropi 1er intento (hoy)</div></div>'
     +'<div class="sc" style="border-top:2px solid var(--red)"><div class="sn" style="color:var(--red)">'+reincPct+'%</div><div class="sl">Reincidencia (activas)</div></div></div>'
     +'<div class="sg" style="margin-bottom:16px"><div class="sc" style="border-top:2px solid var(--red)"><div class="sn" style="color:var(--red)">'+rojo+'</div><div class="sl">Novedades en rojo (7+ dias)</div></div>'
-    +'<div class="sc"><div class="sn">'+topRojas.length+'</div><div class="sl">Tiendas en rojo</div></div></div>'
+    +'<div class="sc"><div class="sn">'+topRojas.length+'</div><div class="sl">Tiendas en rojo</div></div>'+'<div class="sc" style="border-top:2px solid var(--amb)"><div class="sn" style="color:var(--amb)">'+enSeg+'</div><div class="sl">En seguimiento (Rev/CAS)</div></div></div>'
     +'<div class="card cb" style="margin-bottom:14px"><div style="font-size:13px;font-weight:600;color:var(--tx);margin-bottom:8px;padding-bottom:9px;border-bottom:1px solid var(--bdr)">&#x26A0; Tiendas en rojo (novedades de 7+ dias)</div>'+rojasRows+'</div>'
-    +'<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn bp bsm" onclick="goPage(\'tiendas\')">Ir a Tiendas</button><button class="btn bsm" onclick="goPage(\'cal\')">Ver Calendario</button><button class="btn bsm" onclick="goPage(\'prod\')">Ver Metricas</button></div>';
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn bp bsm" onclick="goPage(\'tiendas\')">Ir a Tiendas</button><button class="btn bsm" onclick="goPage(\'cal\')">Ver Calendario</button><button class="btn bsm" onclick="goPage(\'prod\')">Ver Metricas</button><button class="btn bsm" onclick="goPage(\'seg\')">Ver Seguimiento</button></div>';
 };
 
 
@@ -2857,6 +2932,7 @@ renderPg = function(pg){
   if(pg==='anl'){sgnRenderAnl();return;}
   if(pg==='prod'){sgnRenderProd();return;}
   if(pg==='aud'){sgnRenderAud();return;}
+  if(pg==='seg'){sgnRenderSeguimiento();return;}
   if(pg==='reportes'){sgnRenderReportes();return;}
   if(pg==='inicio'){sgnRenderInicio();return;}
   if(pg==='cal'){sgnRenderCal();return;}
