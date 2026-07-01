@@ -2,6 +2,7 @@
 <html lang="es" data-theme="light">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
 <title>Sistema de Gestión Novedades — Fenix Ventures</title>
 <style>
 :root{--bg:#F8F8F9;--sur:#FFF;--sur2:#F2F2F4;--bdr:rgba(0,0,0,.06);--bdr2:rgba(0,0,0,.10);--tx:#18181B;--t2:#52525B;--t3:#A1A1AA;--navy:#3B4B8C;--navyd:#2D3A6E;--navyl:#EEF0FA;--gold:#A67C00;--goldl:#FEF9E7;--goldb:rgba(166,124,0,.2);--red:#B91C1C;--redl:#FEF2F2;--redb:rgba(185,28,28,.15);--grn:#15803D;--grnl:#F0FDF4;--grnb:rgba(21,128,61,.15);--amb:#92400E;--ambl:#FFFBEB;--ambb:rgba(146,64,14,.15);--sbbg:#1E2A5E;--tpbg:#1A2354;--tpbdr:#D4A017;--sh:0 1px 3px rgba(0,0,0,.05);--r:10px;--rs:6px}
@@ -304,6 +305,7 @@ tr:hover td{background:rgba(0,0,0,.012)}
         <div class="tav" id="tav"></div>
         <span class="tname" id="tname"></span>
         <button onclick="doLogout()" style="font-size:11px;color:rgba(255,255,255,.4);background:none;border:none;cursor:pointer;padding:3px 7px;border-radius:var(--rs)">Salir</button>
+        <span title="Version de la plataforma" style="font-size:9px;color:rgba(255,255,255,.28);margin-left:2px">v2026.07.01</span>
       </div>
     </div>
     <div class="content" id="ct">
@@ -3368,12 +3370,12 @@ openGest = function(id,ca,cl,tel,pa,tp,inp){
     // ── SOLUCION DROPI (seccion independiente; obligatoria solo para Contacto/Sin contacto/Devolver) ──
     +'<div id="z-soldropi" style="display:none">'
     +'<div style="font-size:11.5px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.04em;margin:15px 0 7px;padding-top:13px;border-top:1px dashed var(--bdr2)">&#x1F4E6; Solucion Dropi <span style="font-weight:400;color:var(--t3);text-transform:none;letter-spacing:0">(obligatoria para cerrar esta novedad en Dropi)</span></div>'
-    +'<button class="nbt" id="sol-cargar" onclick="sgnCargarOpciones()" style="border-color:var(--navy);color:var(--navy);font-weight:600;margin-bottom:5px">&#x1F50E; Ver opciones reales de Dropi (recomendado)</button>'
+    +'<button class="nbt" id="sol-cargar" onclick="sgnCargarOpciones()" style="border-color:var(--navy);color:var(--navy);font-weight:600;margin-bottom:5px">&#x1F504; Recargar opciones reales de Dropi</button>'
     +'<div id="z-sol-opciones" style="display:none;margin-bottom:8px"></div>'
-    +'<div style="font-size:10.5px;color:var(--t3);margin:4px 0 5px">&#x2014; o usa una opcion manual &#x2014;</div>'
+    +'<div style="font-size:10.5px;color:#C0392B;margin:8px 0 5px;font-weight:600">&#x26A0;&#xFE0F; Opciones manuales (solo si Dropi no carga opciones arriba — pueden ser rechazadas por Dropi):</div>'
     +'<div style="display:flex;flex-direction:column;gap:5px">'
-    +'<button class="nbt" id="sol-reoffer" onclick="selSol(\'reoffer\')">&#x1F504; Volver a ofrecer — reprogramar la entrega con los datos confirmados</button>'
-    +'<button class="nbt" id="sol-return" onclick="selSol(\'return\')">&#x21A9; Return — devolver el pedido al remitente en Dropi</button>'
+    +'<button class="nbt" id="sol-reoffer" onclick="selSol(\'reoffer\')">&#x1F504; Volver a ofrecer <span style="color:#C0392B;font-size:10px">(manual)</span></button>'
+    +'<button class="nbt" id="sol-return" onclick="selSol(\'return\')">&#x21A9; Return / devolver al remitente <span style="color:#C0392B;font-size:10px">(manual — puede ser rechazado)</span></button>'
     +'<button class="nbt" id="sol-none" onclick="selSol(\'none\')">&#x1F4DD; Aun sin solucion — (la gestion NO se podra guardar)</button>'
     +'</div>'
     +'<div id="z-sol-reoffer" style="display:none;margin-top:11px">'
@@ -3416,7 +3418,7 @@ selAc = function(t){
   var map={ok:'z-ok',no:'z-no',rev:'z-rev',dev:'z-dev',cas:'z-cas'};
   if(map[t]){var e=document.getElementById(map[t]);if(e)e.style.display='block';}
   var needDropi=!!DROPI_REQ[t];
-  if(needDropi&&zsd)zsd.style.display='block';
+  if(needDropi&&zsd){zsd.style.display='block';try{sgnCargarOpciones();}catch(e){}}
   if(gal){
     if(needDropi)gal.innerHTML='<div class="al an" style="font-size:12px">Registro interno + <strong>Solucion Dropi obligatoria</strong> (Volver a ofrecer o Return). Sin solucion aplicada no se puede guardar.</div>';
     if(t==='rev')gal.innerHTML='<div class="al ag" style="font-size:12px">&#x1F550; Registro interno: la novedad queda "En revision" por el tiempo del proceso. No se envia nada a Dropi.</div>';
