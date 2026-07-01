@@ -2066,8 +2066,8 @@ async function sgnLoadUsuarios(){
   sgnRenderUsuarios();
 }
 function sgnRolBadge(r){return r==='admin'?'<span class="badge br">Admin</span>':r==='supervisor'?'<span class="badge bg">Supervisor</span>':'<span class="badge bn">Agente</span>';}
-function sgnPuedeGestionar(u){return SGN.profile.role==='admin'||u.role==='agente';}
-function sgnPuedeEliminar(u){if(u.id===SGN.profile.id)return false;return SGN.profile.role==='admin'||u.role==='agente';}
+function sgnPuedeGestionar(u){if(SGN.profile.role==='admin')return true;if(SGN.profile.role==='supervisor')return u.role!=='admin';return u.role==='agente';}
+function sgnPuedeEliminar(u){if(u.id===SGN.profile.id)return false;if(SGN.profile.role==='admin')return true;if(SGN.profile.role==='supervisor')return u.role!=='admin';return u.role==='agente';}
 
 function sgnRenderUsuarios(){
   var aj3=document.getElementById('aj3');if(!aj3)return;
@@ -2097,10 +2097,10 @@ function sgnRenderUsuarios(){
     var f=u.fecha_ingreso?new Date(u.fecha_ingreso+'T12:00:00').toLocaleDateString('es-CO',{day:'2-digit',month:'2-digit',year:'2-digit'}):'&#x2014;';
     var edBtn=sgnPuedeGestionar(u)
       ?'<button class="btn bgn2 bsm" onclick="sgnUserEdit(\''+u.id+'\')">Editar</button>'
-      :'<button class="btn bgn2 bsm" disabled style="opacity:.4;cursor:not-allowed" title="Solo el admin puede editar supervisores">Editar</button>';
+      :'<button class="btn bgn2 bsm" disabled style="opacity:.4;cursor:not-allowed" title="No puedes editar la cuenta de Administrador">Editar</button>';
     var delBtn=sgnPuedeEliminar(u)
       ?'<button class="btn br2 bsm" onclick="sgnUserDel(\''+u.id+'\')">Eliminar</button>'
-      :'<button class="btn br2 bsm" disabled style="opacity:.4;cursor:not-allowed" title="'+(u.id===SGN.profile.id?'No puedes eliminarte a ti mismo':'Solo el admin puede eliminar supervisores')+'">Eliminar</button>';
+      :'<button class="btn br2 bsm" disabled style="opacity:.4;cursor:not-allowed" title="'+(u.id===SGN.profile.id?'No puedes eliminarte a ti mismo':'No puedes eliminar la cuenta de Administrador')+'">Eliminar</button>';
     var togBtn=sgnPuedeEliminar(u)
       ?'<button class="btn '+(u.active?'bgo':'bg')+' bsm" onclick="sgnUserToggle(\''+u.id+'\')">'+(u.active?'Inhabilitar':'Habilitar')+'</button>'
       :'';
@@ -2129,17 +2129,13 @@ function sgnRenderUsuarios(){
         +'<span style="font-size:13px;font-weight:500;color:var(--tx)">'+sgnEsc(a.full_name)+'</span></label>';
     }).join('')||'<div style="font-size:12px;color:var(--t3)">No hay agentes activos aun.</div>';
   }
-  if(SGN.profile.role!=='admin'){
-    aj3.querySelectorAll('button').forEach(function(b){
-      if(b.textContent.indexOf('Nuevo supervisor')!==-1){b.disabled=true;b.style.opacity='.4';b.style.cursor='not-allowed';b.title='Solo el admin puede crear supervisores';}
-    });
-  }
+  // Supervisores tambien pueden crear supervisores (nunca admins).
 }
 
 openAgCrud = function(tp,rolHint){
   if(tp!=='n')return;
   var isSup=rolHint==='sup';
-  if(isSup&&SGN.profile.role!=='admin'){alert('Solo el admin puede crear supervisores.');return;}
+  if(isSup&&SGN.profile.role!=='admin'&&SGN.profile.role!=='supervisor'){alert('No tienes permiso para crear supervisores.');return;}
   var mdayRows='';
   ['LUN','MAR','MIE','JUE','VIE','SAB','DOM'].forEach(function(d,i){
     mdayRows+='<div class="mday"><div class="mdlbl">'+d+'</div><input type="number" value="'+[280,280,280,280,280,150,0][i]+'" id="nu-meta-'+i+'"></div>';
@@ -2585,6 +2581,7 @@ sgnRenderAud = async function(){
   var TIPOS=[['agente','Agente'],['proveedor','Proveedor'],['transportadora','Transportadora'],['producto','Producto']];
   var byTipo={agente:0,proveedor:0,transportadora:0,producto:0};
   filt.forEach(function(x){if(byTipo[x.tipo]!==undefined)byTipo[x.tipo]++;});
+  var sinRev=filt.filter(function(x){return !x.revisada;}).length;
   function selOf(id,val,opts,ph){var map={'au-f-tipo':'audTipo','au-f-aud':'audAuditor','au-f-tienda':'audTienda'};return '<select id="'+id+'" onchange="SGN.'+map[id]+'=this.value;sgnRenderAud()" style="font-size:12px;padding:5px 9px;border:1px solid var(--bdr2);border-radius:var(--rs);background:var(--sur);color:var(--tx);font-family:inherit;max-width:220px"><option value="">'+ph+'</option>'+opts.map(function(o){var v=Array.isArray(o)?o[0]:o,t=Array.isArray(o)?o[1]:o;return '<option value="'+sgnEsc(v)+'"'+(val===v?' selected':'')+'>'+sgnEsc(t)+'</option>';}).join('')+'</select>';}
   var tipoLbl={agente:'Agente',proveedor:'Proveedor',transportadora:'Transportadora',producto:'Producto'};
   var trs=filt.map(function(x){
@@ -2594,9 +2591,10 @@ sgnRenderAud = async function(){
       +'<td style="font-family:monospace;font-size:12px;color:var(--navy)">#'+sgnEsc(x.order_id||'')+'</td>'
       +'<td><span class="badge bn">'+sgnEsc(tipoLbl[x.tipo]||x.tipo||'\u2014')+'</span></td>'
       +'<td style="font-size:12px">'+sgnEsc(x.auditor_nombre||'\u2014')+'</td>'
-      +'<td style="font-size:11.5px;color:var(--t2)">'+sgnEsc(x.comentario||'')+'</td></tr>';
+      +'<td style="font-size:11.5px;color:var(--t2)">'+sgnEsc(x.comentario||'')+'</td>'
+      +'<td style="text-align:center;white-space:nowrap"><label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;font-size:11px;color:var(--t2)"><input type="checkbox" '+(x.revisada?'checked':'')+' onchange="sgnAudRevisar(\''+x.id+'\',this.checked)" style="width:15px;height:15px;accent-color:var(--navy);cursor:pointer">'+(x.revisada&&x.revisada_por?('<span>'+sgnEsc(x.revisada_por)+'</span>'):'<span style="color:var(--t3)">Pendiente</span>')+'</label>'+(x.revisada&&x.revisada_at?('<div style="font-size:10px;color:var(--t3)">'+new Date(x.revisada_at).toLocaleDateString('es-CO',{day:'2-digit',month:'2-digit',year:'2-digit'})+'</div>'):'')+'</td></tr>';
   }).join('');
-  if(!trs)trs='<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--t3);font-size:13px">No hay auditorias en este periodo/filtros.</td></tr>';
+  if(!trs)trs='<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--t3);font-size:13px">No hay auditorias en este periodo/filtros.</td></tr>';
   var body=document.getElementById('au-body');if(!body)return;
   body.innerHTML=
     '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px"><span style="font-size:11px;font-weight:600;color:var(--t2)">Filtros:</span>'
@@ -2604,13 +2602,19 @@ sgnRenderAud = async function(){
     +selOf('au-f-aud',fAud,auditores,'Auditor: todos')
     +selOf('au-f-tienda',fTienda,tiendas,'Tienda: todas')
     +((fTipo||fAud||fTienda)?'<button class="btn bsm" onclick="SGN.audTipo=\'\';SGN.audAuditor=\'\';SGN.audTienda=\'\';sgnRenderAud()">Limpiar</button>':'')+'</div>'
-    +'<div class="sg" style="margin-bottom:16px"><div class="sc"><div class="sn">'+filt.length+'</div><div class="sl">Auditorias (periodo)</div></div>'
+    +'<div class="sg" style="margin-bottom:16px"><div class="sc"><div class="sn">'+filt.length+'</div><div class="sl">Auditorias (periodo)</div></div><div class="sc" style="border-top:2px solid #C0392B"><div class="sn">'+sinRev+'</div><div class="sl">Sin revisar</div></div>'
     +TIPOS.map(function(t){return '<div class="sc" style="border-top:2px solid var(--navy)"><div class="sn">'+byTipo[t[0]]+'</div><div class="sl">'+t[1]+'</div></div>';}).join('')+'</div>'
-    +'<div class="card"><div class="tw"><table><thead><tr><th>Fecha</th><th>Tienda</th><th>Orden</th><th>Tipo</th><th>Audita</th><th>Comentario</th></tr></thead><tbody>'+trs+'</tbody></table></div></div>';
+    +'<div class="card"><div class="tw"><table><thead><tr><th>Fecha</th><th>Tienda</th><th>Orden</th><th>Tipo</th><th>Audita</th><th>Comentario</th><th>Revisado</th></tr></thead><tbody>'+trs+'</tbody></table></div></div>';
 };
 sgnAudConsultar = function(){
   var d=document.getElementById('au-desde'),h=document.getElementById('au-hasta');
   if(d&&d.value)SGN.audDesde=d.value;if(h&&h.value)SGN.audHasta=h.value;
+  sgnRenderAud();
+};
+sgnAudRevisar = async function(id,checked){
+  var upd=checked?{revisada:true,revisada_por:(SGN.profile&&SGN.profile.full_name)||'',revisada_at:new Date().toISOString()}:{revisada:false,revisada_por:null,revisada_at:null};
+  var r=await SGN.client.from('auditorias').update(upd).eq('id',id);
+  if(r&&r.error){alert('No se pudo actualizar la revision: '+r.error.message);}
   sgnRenderAud();
 };
 
@@ -3389,10 +3393,10 @@ openGest = function(id,ca,cl,tel,pa,tp,inp){
     +'<div class="fld" style="margin-top:9px"><label>Detalle de la solucion para Dropi <span class="req">Obligatorio</span></label><textarea id="sr-rsol" placeholder="Lo que quedara en Dropi para la devolucion..." oninput="updB()"></textarea></div>'
     +'</div>'
     +'</div>'
-    +'<div style="margin:14px 0 4px;padding-top:13px;border-top:1px dashed var(--bdr2)"><label style="display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;color:var(--tx);cursor:pointer"><input type="checkbox" id="aud-chk" onchange="sgnAudToggle()" style="width:16px;height:16px;cursor:pointer"> &#x1F50D; Auditoria <span style="font-weight:400;color:var(--t3);font-size:11px">(opcional)</span></label></div>'
+    +'<div style="margin:14px 0 4px;padding-top:13px;border-top:1px dashed var(--bdr2)"><label style="display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;color:var(--tx);cursor:pointer"><input type="checkbox" id="aud-chk" onchange="sgnAudToggle();updB()" style="width:16px;height:16px;cursor:pointer"> &#x1F50D; Auditoria <span style="font-weight:400;color:var(--t3);font-size:11px">(opcional)</span></label></div>'
     +'<div id="z-aud" style="display:none;margin-top:8px">'
     +'<div class="fld"><label>Tipo de auditoria</label><select id="aud-tipo" style="'+inputStyle+'"><option value="agente">Agente</option><option value="proveedor">Proveedor</option><option value="transportadora">Transportadora</option><option value="producto">Producto</option></select></div>'
-    +'<div class="fld" style="margin-top:9px"><label>Comentario</label><textarea id="aud-com" placeholder="Detalle de la auditoria..."></textarea></div>'
+    +'<div class="fld" style="margin-top:9px"><label>Comentario <span class="req">Obligatorio</span></label><textarea id="aud-com" placeholder="Detalle de la auditoria (obligatorio si marcas auditoria)..." oninput="updB()"></textarea></div>'
     +'</div>'
     +'<div><div style="font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px">Historial de gestiones</div><p style="font-size:12px;color:var(--t3);font-style:italic">Cargando historial...</p></div>'
     +'</div>'
@@ -3471,6 +3475,8 @@ updB = function(){
   var b=document.getElementById('bguard');if(!b)return;
   function v(id){var e=document.getElementById(id);return e?e.value.trim():'';}
   if(!gAc){b.disabled=true;return;}
+  var _ac=document.getElementById('aud-chk');
+  if(_ac&&_ac.checked&&!v('aud-com')){b.disabled=true;return;}
   // 1) requisito de la nota interna
   var internoOk=true;
   if(gAc==='ok')internoOk=!!v('cm-ok');
@@ -3494,6 +3500,8 @@ guardar = async function(){
   if(!SGN.curOrd||!gAc)return;
   var n=SGN.curOrd;
   function v(id){var e=document.getElementById(id);return e?e.value.trim():'';}
+  var _audc=document.getElementById('aud-chk');
+  if(_audc&&_audc.checked&&!v('aud-com')){alert('La auditoria requiere un comentario. Escribe el detalle o desmarca la casilla de Auditoria.');return;}
   var acMap={ok:'contacto',no:'sin_contacto',rev:'en_revision',dev:'devolucion',cas:'cas'};
   var comentario=null,nota=null,motivo=null,solucion=null,payload=null,resolver=false;
   // nota interna segun la tarjeta
@@ -3553,7 +3561,7 @@ guardar = async function(){
   if(audChk&&audChk.checked){
     var aTipo=(document.getElementById('aud-tipo')||{}).value||'agente';
     var aCom=(document.getElementById('aud-com')||{}).value||'';
-    var ra=await SGN.client.from('auditorias').insert({order_id:n.order_id,store_name:n.store_name,tipo:aTipo,comentario:aCom,auditor_id:SGN.profile.id,auditor_nombre:SGN.profile.full_name||''});
+    var ra=await SGN.client.from('auditorias').insert({order_id:n.order_id,store_name:n.store_name,tipo:aTipo,comentario:aCom,auditor_id:SGN.profile.id,auditor_nombre:SGN.profile.full_name||'',revisada:false});
     if(ra&&ra.error)console.warn('No se pudo guardar la auditoria:',ra.error.message);
   }
   var resolvioOk=resolver&&resolved&&resolved.ok;
