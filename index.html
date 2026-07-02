@@ -1979,7 +1979,7 @@ openGest = function(id,ca,cl,tel,pa,tp,inp){
   document.getElementById('mogc').innerHTML=
     '<div class="mh"><div class="mt">Gestionar novedad <span style="font-size:11px;background:rgba(212,160,23,.25);color:#D4A017;padding:2px 8px;border-radius:20px;margin-left:5px;font-weight:500">'+il+'</span></div><button class="mc" onclick="closeMo(\'mog\')">&#xD7;</button></div>'
     +'<div class="mb">'
-    +'<div class="ig"><div class="ii"><div class="il">Orden</div><div class="iv" style="font-family:monospace">#'+sgnEsc(id)+'</div></div><div class="ii"><div class="il">Tipo</div><div class="iv"><span class="rtag">&#x2713; Regular</span></div></div><div class="ii"><div class="il">Causal</div><div class="iv" style="font-size:12px">'+sgnEsc(ca)+'</div></div><div class="ii"><div class="il">Cliente</div><div class="iv">'+sgnEsc(cl)+'</div></div><div class="ii"><div class="il">Producto</div><div class="iv" style="font-size:12px">'+sgnEsc((SGN.curOrd&&SGN.curOrd.producto)||'\u2014')+'</div></div><div class="ii"><div class="il">Guia</div><div class="iv" style="font-family:monospace;font-size:12px">'+sgnEsc((SGN.curOrd&&SGN.curOrd.guia_envio)||'\u2014')+'</div></div></div>'
+    +'<div class="ig"><div class="ii"><div class="il">Orden</div><div class="iv" style="font-family:monospace">#'+sgnEsc(id)+'</div></div><div class="ii"><div class="il">Tipo</div><div class="iv"><span class="rtag">&#x2713; Regular</span></div></div><div class="ii"><div class="il">Causal</div><div class="iv" style="font-size:12px">'+sgnEsc(ca)+'</div></div><div class="ii"><div class="il">Cliente</div><div class="iv">'+sgnEsc(cl)+'</div></div><div class="ii"><div class="il">Producto</div><div class="iv" style="font-size:12px">'+sgnEsc((SGN.curOrd&&SGN.curOrd.producto)||'\u2014')+'</div></div><div class="ii"><div class="il">Guia</div><div class="iv" style="font-family:monospace;font-size:12px">'+sgnEsc((SGN.curOrd&&SGN.curOrd.guia_envio)||'\u2014')+'</div></div><div class="ii"><div class="il">Transportadora</div><div class="iv" style="font-size:12px">'+sgnEsc((SGN.curOrd&&SGN.curOrd.transportadora)||'\u2014')+'</div></div></div>'
     +'<div class="tel-card"><div><div class="tellbl">&#x1F4F1; Numero de celular</div><div class="telnum" id="gtel">'+sgnEsc(tel)+'</div><div class="telpais">'+sgnEsc(pa)+'</div></div>'
     +'<div class="telbts">'
     +'<button class="telbt tcall" onclick="window.location.href=\'tel:\'+document.getElementById(\'gtel\').textContent.replace(/\\s/g,\'\')">&#x1F4DE; Llamar</button>'
@@ -2688,7 +2688,7 @@ sgnRenderInicio = async function(){
   var el=document.getElementById('pinicio');if(!el)return;
   el.innerHTML='<div class="pt">Inicio</div><div class="ps">Resumen del dia &middot; '+new Date().toLocaleDateString('es-CO',{weekday:'long',day:'2-digit',month:'long'})+'</div><div id="ini-body"><p class="ps">Cargando indicadores...</p></div>';
   var now=Date.now(),DAY=864e5;function iso(d){return d.toISOString().slice(0,10);}
-  var hoy=iso(new Date());
+  var hoy=iso(new Date(now-5*3600e3)); // dia de hoy en Colombia (UTC-5), no UTC
   var nv=await SGN.client.from('novedades').select('store_id,store_name,estado_local,broker_created_at,intentos').in('estado_local',['pendiente','en_revision','cas_abierto']).limit(20000);
   var novs=nv.data||[];var activas=novs.length;
   var rojas={},rojasId={},rojo=0;
@@ -2696,7 +2696,7 @@ sgnRenderInicio = async function(){
   var topRojas=Object.keys(rojas).map(function(k){return [k,rojas[k]];}).sort(function(a,b){return b[1]-a[1];}).slice(0,8);
   var reinc=novs.filter(function(n){return (n.intentos||0)>=2;}).length;var reincPct=activas?Math.round(reinc/activas*100):0;
   var enSeg=novs.filter(function(n){return n.estado_local==='en_revision'||n.estado_local==='cas_abierto';}).length;
-  var g=await SGN.client.from('gestiones').select('resolved_in_dropi').gte('created_at',hoy+'T00:00:00').lte('created_at',hoy+'T23:59:59').limit(20000);
+  var g=await SGN.client.from('gestiones').select('resolved_in_dropi').gte('created_at',hoy+'T00:00:00-05:00').lte('created_at',hoy+'T23:59:59-05:00').limit(20000);
   var gh=g.data||[];var gestHoy=gh.length;
   var dN=gh.filter(function(x){return x.resolved_in_dropi===true||x.resolved_in_dropi===false;}).length;
   var dOk=gh.filter(function(x){return x.resolved_in_dropi===true;}).length;var pct1er=dN?Math.round(dOk/dN*100):0;
@@ -3350,7 +3350,7 @@ openGest = function(id,ca,cl,tel,pa,tp,inp){
   document.getElementById('mogc').innerHTML=
     '<div class="mh"><div class="mt">Gestionar novedad <span style="font-size:11px;background:rgba(212,160,23,.25);color:#D4A017;padding:2px 8px;border-radius:20px;margin-left:5px;font-weight:500">'+il+'</span></div><button class="mc" onclick="closeMo(\'mog\')">&#xD7;</button></div>'
     +'<div class="mb">'
-    +'<div class="ig"><div class="ii"><div class="il">Orden</div><div class="iv" style="font-family:monospace">#'+sgnEsc(id)+'</div></div><div class="ii"><div class="il">Tipo</div><div class="iv"><span class="rtag">&#x2713; Regular</span></div></div><div class="ii"><div class="il">Causal</div><div class="iv" style="font-size:12px">'+sgnEsc(ca)+'</div></div><div class="ii"><div class="il">Cliente</div><div class="iv">'+sgnEsc(cl)+'</div></div><div class="ii"><div class="il">Producto</div><div class="iv" style="font-size:12px">'+sgnEsc((SGN.curOrd&&SGN.curOrd.producto)||'\u2014')+'</div></div><div class="ii"><div class="il">Guia</div><div class="iv" style="font-family:monospace;font-size:12px">'+sgnEsc((SGN.curOrd&&SGN.curOrd.guia_envio)||'\u2014')+'</div></div></div>'
+    +'<div class="ig"><div class="ii"><div class="il">Orden</div><div class="iv" style="font-family:monospace">#'+sgnEsc(id)+'</div></div><div class="ii"><div class="il">Tipo</div><div class="iv"><span class="rtag">&#x2713; Regular</span></div></div><div class="ii"><div class="il">Causal</div><div class="iv" style="font-size:12px">'+sgnEsc(ca)+'</div></div><div class="ii"><div class="il">Cliente</div><div class="iv">'+sgnEsc(cl)+'</div></div><div class="ii"><div class="il">Producto</div><div class="iv" style="font-size:12px">'+sgnEsc((SGN.curOrd&&SGN.curOrd.producto)||'\u2014')+'</div></div><div class="ii"><div class="il">Guia</div><div class="iv" style="font-family:monospace;font-size:12px">'+sgnEsc((SGN.curOrd&&SGN.curOrd.guia_envio)||'\u2014')+'</div></div><div class="ii"><div class="il">Transportadora</div><div class="iv" style="font-size:12px">'+sgnEsc((SGN.curOrd&&SGN.curOrd.transportadora)||'\u2014')+'</div></div></div>'
     +'<div class="tel-card"><div><div class="tellbl">&#x1F4F1; Numero de celular</div><div class="telnum" id="gtel">'+sgnEsc(tel)+'</div><div class="telpais">'+sgnEsc(pa)+'</div></div>'
     +'<div class="telbts">'
     +'<button class="telbt tcall" onclick="window.location.href=\'tel:\'+document.getElementById(\'gtel\').textContent.replace(/\\s/g,\'\')">&#x1F4DE; Llamar</button>'
