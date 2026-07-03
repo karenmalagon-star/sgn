@@ -2414,7 +2414,7 @@ sgnAgenteDetalle = async function(agId, agNombre){
   var cont=document.getElementById('moagc');if(!cont)return;
   cont.innerHTML='<div class="mh"><div class="mt">Detalle de '+sgnEsc(agNombre||'')+'</div><button class="mc" onclick="closeMo(\'moag\')">&#xD7;</button></div><div class="mb"><p class="ps">Cargando gestiones...</p></div>';
   document.getElementById('moag').classList.add('open');
-  var r=await SGN.client.from('gestiones').select('accion,order_id,store_name,created_at,comentario,nota_revision,motivo_devolucion,solucion_dropi,resolved_in_dropi').eq('agente_id',agId).gte('created_at',SGN.prodDesde+'T00:00:00').lte('created_at',SGN.prodHasta+'T23:59:59').order('created_at',{ascending:false}).limit(8000);
+  var _rr=[];{var _o=0;while(true){var _p=await SGN.client.from('gestiones').select('accion,order_id,store_name,created_at,comentario,nota_revision,motivo_devolucion,solucion_dropi,resolved_in_dropi').eq('agente_id',agId).gte('created_at',SGN.prodDesde+'T00:00:00-05:00').lte('created_at',SGN.prodHasta+'T23:59:59-05:00').order('created_at',{ascending:false}).range(_o,_o+999);var _d=_p.data||[];_rr=_rr.concat(_d);if(_d.length<1000)break;_o+=1000;if(_rr.length>200000)break;}}var r={data:_rr};
   var gs=r.data||[];
   var GR=[['contacto','Contacto con cliente'],['sin_contacto','Sin contacto'],['devolucion','Devolver al remitente'],['cas','CAS'],['transportadora','Transportadora'],['en_revision','En revision']];
   var html='';
@@ -2450,10 +2450,9 @@ sgnRenderProd = async function(){
   // Datos compartidos por ambas vistas
   var pr=await SGN.client.from('profiles').select('id,full_name,role,active,metas_dia').eq('role','agente');
   var agentes=(pr.data||[]).filter(function(a){return a.active!==false;});
-  var g=await SGN.client.from('gestiones').select('agente_id,accion,created_at,order_id,store_name,resolved_in_dropi').gte('created_at',SGN.prodDesde+'T00:00:00').lte('created_at',SGN.prodHasta+'T23:59:59').limit(20000);
-  var rows=g.data||[];
-  var nv=await SGN.client.from('novedades').select('order_id,store_name,broker_created_at,intentos,estado_local').limit(20000);
-  var novList=nv.data||[];var novMap={};novList.forEach(function(n){novMap[String(n.order_id)]=n;});
+  var rows=[];{var _o=0;while(true){var _g=await SGN.client.from('gestiones').select('agente_id,accion,created_at,order_id,store_name,resolved_in_dropi').gte('created_at',SGN.prodDesde+'T00:00:00-05:00').lte('created_at',SGN.prodHasta+'T23:59:59-05:00').order('created_at',{ascending:false}).range(_o,_o+999);var _d=_g.data||[];rows=rows.concat(_d);if(_d.length<1000)break;_o+=1000;if(rows.length>200000)break;}}
+  var novList=[];{var _o2=0;while(true){var _n=await SGN.client.from('novedades').select('order_id,store_name,broker_created_at,intentos,estado_local').range(_o2,_o2+999);var _d2=_n.data||[];novList=novList.concat(_d2);if(_d2.length<1000)break;_o2+=1000;if(novList.length>200000)break;}}
+  var novMap={};novList.forEach(function(n){novMap[String(n.order_id)]=n;});
   if(vw==='tienda'){sgnMetricasTienda(rows,novList,novMap);return;}
   sgnMetricasAgente(agentes,rows,novMap);
 };
@@ -2701,7 +2700,7 @@ sgnRenderInicio = async function(){
   var dN=gh.filter(function(x){return x.resolved_in_dropi===true||x.resolved_in_dropi===false;}).length;
   var dOk=gh.filter(function(x){return x.resolved_in_dropi===true;}).length;var pct1er=dN?Math.round(dOk/dN*100):0;
   var desde7=iso(new Date(now-6*DAY));
-  var g7=await SGN.client.from('gestiones').select('order_id,created_at').gte('created_at',desde7+'T00:00:00').limit(20000);
+  var _g7=[];{var _o=0;while(true){var _p=await SGN.client.from('gestiones').select('order_id,created_at').gte('created_at',desde7+'T00:00:00').range(_o,_o+999);var _d=_p.data||[];_g7=_g7.concat(_d);if(_d.length<1000)break;_o+=1000;if(_g7.length>200000)break;}}var g7={data:_g7};
   var nAll=[],off=0;while(true){var rr=await SGN.client.from('novedades').select('order_id,broker_created_at').range(off,off+999);var dd=(rr.data||[]);nAll=nAll.concat(dd);if(dd.length<1000)break;off+=1000;if(nAll.length>60000)break;}
   var nm={};nAll.forEach(function(n){nm[String(n.order_id)]=n.broker_created_at;});
   var tmrSum=0,tmrN=0;(g7.data||[]).forEach(function(x){var bc=nm[String(x.order_id)];if(bc){var dt=(new Date(x.created_at)-new Date(bc))/36e5;if(dt>=0&&dt<24*120){tmrSum+=dt;tmrN++;}}});
@@ -2897,7 +2896,7 @@ sgnRenderCal = async function(){
   function iso(d){return d.toISOString().slice(0,10);}
   // Gestiones de los ultimos 30 dias: ultima gestion por tienda + conteo por dia
   var desde30=iso(new Date(now-29*DAY));
-  var g=await SGN.client.from('gestiones').select('store_name,created_at').gte('created_at',desde30+'T00:00:00').limit(20000);
+  var _g30=[];{var _o=0;while(true){var _p=await SGN.client.from('gestiones').select('store_name,created_at').gte('created_at',desde30+'T00:00:00').range(_o,_o+999);var _d=_p.data||[];_g30=_g30.concat(_d);if(_d.length<1000)break;_o+=1000;if(_g30.length>200000)break;}}var g={data:_g30};
   var lastGest={};
   (g.data||[]).forEach(function(x){var sn=x.store_name||'—';var t=new Date(x.created_at).getTime();if(!lastGest[sn]||t>lastGest[sn])lastGest[sn]=t;});
   // ALARMA: tiendas con activas y sin gestion en +1 dia (last review > 24h, o nunca)
