@@ -1430,7 +1430,7 @@ doLogout = async function(){
 // ── SIDEBAR (Tiendas primero; Calendario al final, aún demo) ──
 buildSB = function(){
   var items = role==='ag'
-    ? [['tiendas','Tiendas'],['rend','Mi rendimiento'],['cal','Calendario']]
+    ? [['tiendas','Tiendas'],['rend','Mi rendimiento'],['seg','Seguimiento'],['cal','Calendario']]
     : [['inicio','Inicio'],['tiendas','Tiendas'],['rend','Mi rendimiento'],['prod','Metricas'],['aud','Auditoria'],['seg','Seguimiento'],['reportes','Reportes'],['ajustes','Ajustes'],['cal','Calendario']];
   var html='<div class="sblbl">Principal</div>';
   items.forEach(function(it){html+='<div class="ni" id="ni-'+it[0]+'" onclick="goPage(\''+it[0]+'\')">'+(IC[it[0]]||IC.cal)+it[1]+'</div>';});
@@ -1897,7 +1897,7 @@ sgnEnter = async function(user){
 // ── sidebar: Mi rendimiento solo para agentes ──
 buildSB = function(){
   var items = role==='ag'
-    ? [['tiendas','Tiendas'],['rend','Mi rendimiento'],['cal','Calendario']]
+    ? [['tiendas','Tiendas'],['rend','Mi rendimiento'],['seg','Seguimiento'],['cal','Calendario']]
     : [['inicio','Inicio'],['tiendas','Tiendas'],['prod','Metricas'],['aud','Auditoria'],['seg','Seguimiento'],['reportes','Reportes'],['ajustes','Ajustes'],['cal','Calendario']];
   var html='<div class="sblbl">Principal</div>';
   items.forEach(function(it){html+='<div class="ni" id="ni-'+it[0]+'" onclick="goPage(\''+it[0]+'\')">'+(IC[it[0]]||IC.cal)+it[1]+'</div>';});
@@ -2269,8 +2269,7 @@ sgnRenderRend = async function(){
   var m0=new Date(now.getFullYear(),now.getMonth(),1);
   var s7=new Date(d0);s7.setDate(d0.getDate()-6);
   var from=new Date(Math.min(m0.getTime(),monday.getTime(),s7.getTime())).toISOString();
-  var r=await SGN.client.from('gestiones').select('accion,created_at').eq('agente_id',SGN.profile.id).gte('created_at',from).limit(10000);
-  var rows=r.data||[];
+  var rows=[];{var _o=0;while(true){var _r=await SGN.client.from('gestiones').select('accion,created_at').eq('agente_id',SGN.profile.id).gte('created_at',from).order('created_at',{ascending:false}).range(_o,_o+999);var _d=_r.data||[];rows=rows.concat(_d);if(_d.length<1000)break;_o+=1000;if(rows.length>100000)break;}}
   function agg(f){var c={tot:0,ok:0,no:0,dev:0,cas:0};rows.forEach(function(g){if(new Date(g.created_at)>=f){c.tot++;if(g.accion==='contacto')c.ok++;else if(g.accion==='sin_contacto')c.no++;else if(g.accion==='devolucion')c.dev++;else if(g.accion==='cas')c.cas++;}});return c;}
   var metaSem=metas.reduce(function(a,b){return a+(b||0);},0);
   var metaHoy=metas[(d0.getDay()+6)%7]||0;
