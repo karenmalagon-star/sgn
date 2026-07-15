@@ -1697,7 +1697,7 @@ function sgnRenderTd(){
       +'<td><div class="cc"><span class="cn">'+sgnEsc(n.client_name||'—')+'</span><span class="ctel">'+sgnEsc(n.phone||'')+'</span></div></td>'
       +'<td style="font-size:11.5px;color:var(--t2)">'+sgnEsc(n.direccion_actual||'—')+'</td>'
       +'<td><div class="dots">'+dots+'</div></td>'
-      +'<td><span class="badge '+badge+'">'+estLbl+'</span>'+sgnSegCell(n)+((n.assigned_to&&n.estado_local!=='resuelta')?'<div style="font-size:10px;font-weight:600;margin-top:3px;color:'+(n.assigned_to===SGN.profile.id?'var(--grn)':'var(--amb)')+'">🔒 '+(n.assigned_to===SGN.profile.id?'En gestion (tu)':'En gestion')+'</div>':'')+'</td>'
+      +'<td><span class="badge '+badge+'">'+estLbl+'</span>'+(n.dropi_review?'<div style="font-size:10px;font-weight:700;margin-top:3px;color:var(--red)">&#x26A0; Verificar/cerrar en Dropi</div>':'')+sgnSegCell(n)+((n.assigned_to&&n.estado_local!=='resuelta')?'<div style="font-size:10px;font-weight:600;margin-top:3px;color:'+(n.assigned_to===SGN.profile.id?'var(--grn)':'var(--amb)')+'">🔒 '+(n.assigned_to===SGN.profile.id?'En gestion (tu)':'En gestion')+'</div>':'')+'</td>'
       +'<td>'+accion+'</td>'
       +'</tr>';
   });
@@ -3547,7 +3547,8 @@ guardar = async function(){
   }
   var resolvioOk=resolver&&resolved&&resolved.ok;
   var nuevo=gAc==='rev'?'en_revision':gAc==='cas'?'cas_abierto':resolvioOk?'resuelta':'pendiente';
-  await SGN.client.from('novedades').update({intentos:(n.intentos||0)+1,estado_local:nuevo,assigned_to:null}).eq('order_id',n.order_id);
+  var _needsRev=!!DROPI_REQ[gAc]&&!resolvioOk;
+  await SGN.client.from('novedades').update({intentos:(n.intentos||0)+1,estado_local:nuevo,assigned_to:null,dropi_review:_needsRev}).eq('order_id',n.order_id);
   n.intentos=(n.intentos||0)+1;n.estado_local=nuevo;
   sgnBuildTiendas();
   closeMo('mog');setTimeout(function(){goPage('conf');},200);
