@@ -3379,22 +3379,7 @@ openGest = function(id,ca,cl,tel,pa,tp,inp){
     +'<div style="font-size:11.5px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.04em;margin:15px 0 7px;padding-top:13px;border-top:1px dashed var(--bdr2)">&#x1F4E6; Solucion Dropi <span style="font-weight:400;color:var(--t3);text-transform:none;letter-spacing:0">(obligatoria para cerrar esta novedad en Dropi)</span></div>'
     +'<button class="nbt" id="sol-cargar" onclick="sgnCargarOpciones()" style="border-color:var(--navy);color:var(--navy);font-weight:600;margin-bottom:5px">&#x1F504; Recargar opciones reales de Dropi</button>'
     +'<div id="z-sol-opciones" style="display:none;margin-bottom:8px"></div>'
-    +'<div style="font-size:10.5px;color:#C0392B;margin:8px 0 5px;font-weight:600">&#x26A0;&#xFE0F; Opciones manuales (solo si Dropi no carga opciones arriba — pueden ser rechazadas por Dropi):</div>'
-    +'<div style="display:flex;flex-direction:column;gap:5px">'
-    +'<button class="nbt" id="sol-reoffer" onclick="selSol(\'reoffer\')">&#x1F504; Volver a ofrecer <span style="color:#C0392B;font-size:10px">(manual)</span></button>'
-    +'<button class="nbt" id="sol-return" onclick="selSol(\'return\')">&#x21A9; Return / devolver al remitente <span style="color:#C0392B;font-size:10px">(manual — puede ser rechazado)</span></button>'
-    +'<button class="nbt" id="sol-none" onclick="selSol(\'none\')">&#x1F4DD; Aun sin solucion — (la gestion NO se podra guardar)</button>'
-    +'</div>'
-    +'<div id="z-sol-reoffer" style="display:none;margin-top:11px">'
-    +'<div class="fld"><label>Detalle de la solucion para Dropi <span class="req">Obligatorio</span></label><textarea id="sr-sol" placeholder="Lo que quedara en Dropi. Ej: Cliente confirma direccion y recibe, reprogramar entrega." oninput="updB()"></textarea></div>'
-    +'<div class="fld" style="margin-top:9px"><label>Direccion confirmada <span class="req">Obligatorio</span></label><input type="text" id="sr-dir" style="'+inputStyle+'" value="'+sgnEsc(n.direccion_corregida||n.direccion_actual||'')+'" oninput="updB()"></div>'
-    +'<div class="tf" style="margin-top:9px"><div class="fld"><label>Nombre confirma</label><input type="text" id="sr-nom" style="'+inputStyle+'" value="'+sgnEsc(n.client_name||'')+'"></div>'
-    +'<div class="fld"><label>Select value Dropi</label><input type="text" id="sr-sv" style="'+inputStyle+'" value="1"></div></div>'
-    +'</div>'
-    +'<div id="z-sol-return" style="display:none;margin-top:11px">'
-    +'<div class="fld"><label>Motivo de devolucion <span class="req">Obligatorio</span></label><select id="sr-mot" onchange="updB()" style="'+inputStyle+'">'+motOpts+'</select></div>'
-    +'<div class="fld" style="margin-top:9px"><label>Detalle de la solucion para Dropi <span class="req">Obligatorio</span></label><textarea id="sr-rsol" placeholder="Lo que quedara en Dropi para la devolucion..." oninput="updB()"></textarea></div>'
-    +'</div>'
+    +'<div id="z-sol-nomenu" style="display:none"></div>'
     +'</div>'
     +'<div style="margin:14px 0 4px;padding-top:13px;border-top:1px dashed var(--bdr2)"><label style="display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;color:var(--tx);cursor:pointer"><input type="checkbox" id="aud-chk" onchange="sgnAudToggle();updB()" style="width:16px;height:16px;cursor:pointer"> &#x1F50D; Auditoria <span style="font-weight:400;color:var(--t3);font-size:11px">(opcional)</span></label></div>'
     +'<div id="z-aud" style="display:none;margin-top:8px">'
@@ -3417,8 +3402,7 @@ selAc = function(t){
   var ab=document.getElementById('ab-'+t);if(ab)ab.classList.add('sel');
   ['ok','no','rev','dev','cas'].forEach(function(z){var e=document.getElementById('z-'+z);if(e)e.style.display='none';});
   var zsd=document.getElementById('z-soldropi');if(zsd)zsd.style.display='none';
-  ['sol-reoffer','sol-return','sol-none'].forEach(function(i){var b=document.getElementById(i);if(b)b.classList.remove('sel');});
-  ['z-sol-reoffer','z-sol-return'].forEach(function(i){var e=document.getElementById(i);if(e)e.style.display='none';});
+  var _snm=document.getElementById('z-sol-nomenu');if(_snm){_snm.style.display='none';_snm.innerHTML='';}
   var zso=document.getElementById('z-sol-opciones');if(zso){zso.style.display='none';zso.innerHTML='';}
   var gal=document.getElementById('gal');if(gal)gal.innerHTML='';
   document.querySelectorAll('#z-rev .nbt').forEach(function(b){b.classList.remove('sel');});
@@ -3427,7 +3411,7 @@ selAc = function(t){
   var needDropi=!!DROPI_REQ[t];
   if(needDropi&&zsd){zsd.style.display='block';try{sgnCargarOpciones();}catch(e){}}
   if(gal){
-    if(needDropi)gal.innerHTML='<div class="al an" style="font-size:12px">Registro interno + <strong>Solucion Dropi obligatoria</strong> (Volver a ofrecer o Return). Sin solucion aplicada no se puede guardar.</div>';
+    if(needDropi)gal.innerHTML='<div class="al an" style="font-size:12px">Registro interno + <strong>Solucion Dropi</strong>: elige una opcion real de Dropi. En Ecuador/Mexico (variante C/D) se resuelve directamente en Dropi.</div>';
     if(t==='rev')gal.innerHTML='<div class="al ag" style="font-size:12px">&#x1F550; Registro interno: la novedad queda "En revision" por el tiempo del proceso. No se envia nada a Dropi.</div>';
     if(t==='cas')gal.innerHTML='<div class="al ag" style="font-size:12px">&#x1F4CB; Registro interno: se abre un CAS. No se envia nada a Dropi.</div>';
   }
@@ -3436,12 +3420,9 @@ selAc = function(t){
 
 selSol = function(t){
   gSol=t;gOpcion=null;
-  ['sol-reoffer','sol-return','sol-none'].forEach(function(i){var b=document.getElementById(i);if(b)b.classList.toggle('sel',i==='sol-'+t);});
+  var mb=document.getElementById('sol-manualdropi');if(mb)mb.classList.toggle('sel',t==='manual_dropi');
   document.querySelectorAll('#z-sol-opciones .nbt').forEach(function(b){b.classList.remove('sel');});
-  var fz=document.getElementById('z-sol-opcion-fields');if(fz){fz.style.display='none';fz.innerHTML='';}
-  var zr=document.getElementById('z-sol-reoffer'),zt=document.getElementById('z-sol-return');
-  if(zr)zr.style.display=t==='reoffer'?'block':'none';
-  if(zt)zt.style.display=t==='return'?'block':'none';
+  var mf=document.getElementById('md-fields');if(mf)mf.style.display=(t==='manual_dropi')?'block':'none';
   updB();
 }
 
@@ -3453,7 +3434,11 @@ sgnCargarOpciones = async function(){
   var r=await sgnFn('quick-processor',{order_id:SGN.curOrd.order_id});
   if(!r||!r.ok){cont.innerHTML='<div class="al ag" style="font-size:12px">No se pudieron cargar las opciones de Dropi'+(r&&r.error?(' ('+sgnEsc(String(r.error))+')'):'')+'. Usa una opcion manual abajo.</div>';return;}
   var ops=r.opciones||[];SGN.curOpciones=ops;
-  if(!ops.length){cont.innerHTML='<div class="al ag" style="font-size:12px">Dropi no devolvio opciones para esta novedad. Usa una opcion manual.</div>';return;}
+  var esReal=(r.fuente==='solution_list');
+  var nomenu=document.getElementById('z-sol-nomenu');
+  if(!esReal){cont.style.display='none';cont.innerHTML='';if(nomenu){nomenu.style.display='block';nomenu.innerHTML='<div class="al ar" style="font-size:12px">&#x1F512; Esta novedad (variante '+sgnEsc(r.variante||'')+') se resuelve <strong>directamente en Dropi</strong>: el broker aun no permite aplicarla desde aqui. Registra tu gestion y cierrala en Dropi manualmente.</div><button class="nbt" id="sol-manualdropi" onclick="selSol(\'manual_dropi\')" style="margin-top:6px">&#x2713; Registrar gestion (la resuelvo en Dropi)</button><div id="md-fields" style="display:none;margin-top:9px"><div class="fld"><label>Nota de la gestion <span style="font-size:10px;color:var(--t3)">(opcional)</span></label><textarea id="md-nota" placeholder="Ej: Cliente confirma; se aplica la devolucion/reprogramacion en Dropi." oninput="updB()"></textarea></div></div>';}return;}
+  if(nomenu){nomenu.style.display='none';nomenu.innerHTML='';}
+  if(!ops.length){cont.innerHTML='<div class="al ag" style="font-size:12px">Dropi no devolvio opciones. Registra tu gestion y resuelvela en Dropi directamente.</div>';return;}
   var html='<div style="font-size:11px;color:var(--t3);margin-bottom:6px">Opciones reales de Dropi'+(r.variante?(' &middot; variante '+sgnEsc(r.variante)):'')+':</div><div style="display:flex;flex-direction:column;gap:5px">';
   ops.forEach(function(o,i){html+='<button class="nbt" id="opc-'+i+'" onclick="selOpcionDropi('+i+')">'+sgnEsc(o.label||o.id)+(o.tipo?(' <span style="color:var(--t3);font-size:10px">('+sgnEsc(o.tipo)+')</span>'):'')+'</button>';});
   html+='</div><div id="z-sol-opcion-fields" style="display:none;margin-top:10px"></div>';
@@ -3463,8 +3448,7 @@ selOpcionDropi = function(i){
   var o=(SGN.curOpciones||[])[i];if(!o)return;
   gSol='opcion';gOpcion=o.id;gOpcionLabel=o.label||o.id;gOpcionReq=o.requiere||[];
   (SGN.curOpciones||[]).forEach(function(_,j){var b=document.getElementById('opc-'+j);if(b)b.classList.toggle('sel',j===i);});
-  ['sol-reoffer','sol-return','sol-none'].forEach(function(id){var b=document.getElementById(id);if(b)b.classList.remove('sel');});
-  var zr=document.getElementById('z-sol-reoffer'),zt=document.getElementById('z-sol-return');if(zr)zr.style.display='none';if(zt)zt.style.display='none';
+  var _mb=document.getElementById('sol-manualdropi');if(_mb)_mb.classList.remove('sel');var _mf=document.getElementById('md-fields');if(_mf)_mf.style.display='none';
   var needDir=gOpcionReq.indexOf('direccion_corregida')>-1;
   var st='font-size:12.5px;padding:7px 11px;border:1px solid var(--bdr2);border-radius:var(--rs);background:var(--sur);color:var(--tx);font-family:inherit;width:100%;margin-top:3px';
   var fz=document.getElementById('z-sol-opcion-fields');
@@ -3491,9 +3475,8 @@ updB = function(){
   // 2) requisito de Solucion Dropi (solo Contacto/Sin contacto/Devolver)
   if(DROPI_REQ[gAc]){
     if(gSol==='opcion'&&gOpcion){var dirOk=(gOpcionReq.indexOf('direccion_corregida')===-1)||!!v('opc-dir');b.disabled=!(v('opc-sol')&&dirOk);return;}
-    if(gSol==='reoffer'){b.disabled=!(v('sr-sol')&&v('sr-dir'));return;}
-    if(gSol==='return'){b.disabled=!(v('sr-mot')&&v('sr-rsol'));return;}
-    b.disabled=true;return; // 'none' o sin elegir -> no se puede guardar
+    if(gSol==='manual_dropi'){b.disabled=false;return;}
+    b.disabled=true;return; // sin opcion real elegida -> no se puede guardar
   }
   // 3) rev/cas -> solo registro interno
   b.disabled=false;
@@ -3518,15 +3501,10 @@ guardar = async function(){
     if(gSol==='opcion'&&gOpcion){
       solucion=v('opc-sol');resolver=true;
       payload={tipo_solucion:'opcion',opcion:gOpcion,label:gOpcionLabel,solution:solucion,direccion_corregida:v('opc-dir')||undefined};
-    } else if(gSol==='reoffer'){
-      solucion=v('sr-sol');resolver=true;
-      payload={solution:solucion,direccionConfirma:v('sr-dir'),nombreConfirma:v('sr-nom')||n.client_name||'',selectValueConfirma:v('sr-sv')||'1',tipo_solucion:'volver_a_ofrecer'};
-    } else if(gSol==='return'){
-      motivo=v('sr-mot');solucion=v('sr-rsol');resolver=true;
-      payload={solution:solucion,motivo_devolucion:motivo,tipo_solucion:'return'};
+    } else if(gSol==='manual_dropi'){
+      solucion=v('md-nota')||'Gestion registrada; se resuelve directamente en Dropi';resolver=false;
     } else {
-      // sin solucion Dropi -> no se debe guardar (la novedad sigue vigente)
-      alert('Esta gestion exige una Solucion Dropi. Elige una opcion real de Dropi (recomendado) o una opcion manual.');
+      alert('Elige una opcion real de Dropi. Si es Ecuador/Mexico (variante C/D), usa "Registrar gestion (la resuelvo en Dropi)".');
       return;
     }
   }
