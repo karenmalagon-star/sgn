@@ -3312,7 +3312,7 @@ selAc = function(t){
 //   (devuelve directamente en Dropi).
 // ════════════════════════════════════════════════════════════
 var gSol = null; // 'none' | 'reoffer' | 'return' | 'opcion'
-var gOpcion=null, gOpcionLabel=null, gOpcionReq=[];
+var gOpcion=null, gOpcionLabel=null, gOpcionReq=[], gNeedConfirm=false;
 
 sgnGest = function(orderId){
   var n=null;SGN.novedades.forEach(function(x){if(x.order_id===orderId)n=x;});
@@ -3397,7 +3397,7 @@ var DROPI_REQ={ok:1,no:1,dev:1};
 // Auditoria (opcional): muestra/oculta el bloque de tipo + comentario
 sgnAudToggle = function(){var c=document.getElementById('aud-chk'),z=document.getElementById('z-aud');if(z)z.style.display=(c&&c.checked)?'block':'none';};
 selAc = function(t){
-  gAc=t;gNt=null;gSol=null;gOpcion=null;
+  gAc=t;gNt=null;gSol=null;gOpcion=null;gNeedConfirm=false;
   document.querySelectorAll('.ab').forEach(function(b){b.classList.remove('sel');});
   var ab=document.getElementById('ab-'+t);if(ab)ab.classList.add('sel');
   ['ok','no','rev','dev','cas'].forEach(function(z){var e=document.getElementById('z-'+z);if(e)e.style.display='none';});
@@ -3445,13 +3445,15 @@ sgnCargarOpciones = async function(){
 selOpcionDropi = function(i){
   var o=(SGN.curOpciones||[])[i];if(!o)return;
   gSol='opcion';gOpcion=o.id;gOpcionLabel=o.label||o.id;gOpcionReq=o.requiere||[];
+  gNeedConfirm=(o.id==='devolucion_remitente')||((o.tipo==='devolucion')&&(o.id!=='sl_8'));
   (SGN.curOpciones||[]).forEach(function(_,j){var b=document.getElementById('opc-'+j);if(b)b.classList.toggle('sel',j===i);});
   var _mb=document.getElementById('sol-manualdropi');if(_mb)_mb.classList.remove('sel');var _mf=document.getElementById('md-fields');if(_mf)_mf.style.display='none';
   var needDir=gOpcionReq.indexOf('direccion_corregida')>-1;
   var st='font-size:12.5px;padding:7px 11px;border:1px solid var(--bdr2);border-radius:var(--rs);background:var(--sur);color:var(--tx);font-family:inherit;width:100%;margin-top:3px';
+  var confHtml=gNeedConfirm?'<div class="al" style="margin-top:9px;background:#3a1414;border:1px solid var(--red);color:#ffd7d7;font-size:12px;border-radius:var(--rs);padding:9px"><strong>&#x26A0; Devolucion al remitente — IRREVERSIBLE.</strong> El paquete se regresa al remitente y no se puede deshacer.<label style="display:flex;align-items:center;gap:7px;margin-top:7px;cursor:pointer;color:#fff"><input type="checkbox" id="opc-confirm" onchange="updB()" style="width:auto"> Confirmo la devolucion al remitente</label></div>':'';
   var fz=document.getElementById('z-sol-opcion-fields');
   if(fz){fz.style.display='block';
-    fz.innerHTML='<div class="fld"><label>Detalle / nota de la solucion <span class="req">Obligatorio</span></label><textarea id="opc-sol" placeholder="Ej: Cliente confirma, reintentar entrega" oninput="updB()"></textarea></div>'+(needDir?'<div class="fld" style="margin-top:9px"><label>Direccion corregida <span class="req">Obligatorio</span></label><input type="text" id="opc-dir" value="'+sgnEsc((SGN.curOrd&&(SGN.curOrd.direccion_corregida||SGN.curOrd.direccion_actual))||'')+'" oninput="updB()" style="'+st+'"></div>':'');
+    fz.innerHTML='<div class="fld"><label>Detalle / nota de la solucion <span class="req">Obligatorio</span></label><textarea id="opc-sol" placeholder="Ej: Cliente confirma, reintentar entrega" oninput="updB()"></textarea></div>'+(needDir?'<div class="fld" style="margin-top:9px"><label>Direccion corregida <span class="req">Obligatorio</span></label><input type="text" id="opc-dir" value="'+sgnEsc((SGN.curOrd&&(SGN.curOrd.direccion_corregida||SGN.curOrd.direccion_actual))||'')+'" oninput="updB()" style="'+st+'"></div>':'')+confHtml;
   }
   updB();
 };
@@ -3472,7 +3474,7 @@ updB = function(){
   if(!internoOk){b.disabled=true;return;}
   // 2) requisito de Solucion Dropi (solo Contacto/Sin contacto/Devolver)
   if(DROPI_REQ[gAc]){
-    if(gSol==='opcion'&&gOpcion){var dirOk=(gOpcionReq.indexOf('direccion_corregida')===-1)||!!v('opc-dir');b.disabled=!(v('opc-sol')&&dirOk);return;}
+    if(gSol==='opcion'&&gOpcion){var dirOk=(gOpcionReq.indexOf('direccion_corregida')===-1)||!!v('opc-dir');var cc=document.getElementById('opc-confirm');var confOk=!gNeedConfirm||(cc&&cc.checked);b.disabled=!(v('opc-sol')&&dirOk&&confOk);return;}
     if(gSol==='manual_dropi'){b.disabled=false;return;}
     b.disabled=true;return; // sin opcion real elegida -> no se puede guardar
   }
@@ -3498,7 +3500,7 @@ guardar = async function(){
   if(DROPI_REQ[gAc]){
     if(gSol==='opcion'&&gOpcion){
       solucion=v('opc-sol');resolver=true;
-      payload={tipo_solucion:'opcion',opcion:gOpcion,label:gOpcionLabel,solution:solucion,direccion_corregida:v('opc-dir')||undefined};
+      payload={tipo_solucion:'opcion',opcion:gOpcion,label:gOpcionLabel,solution:solucion,direccion_corregida:v('opc-dir')||undefined,confirmacion:gNeedConfirm?'DEVOLVER':undefined};
     } else if(gSol==='manual_dropi'){
       solucion=v('md-nota')||'Gestion registrada; se resuelve directamente en Dropi';resolver=false;
     } else {
@@ -3516,6 +3518,7 @@ guardar = async function(){
       opcion:(payload&&payload.opcion)?payload.opcion:undefined,
       solution_text:solucion||'',
       direccion_corregida:(payload&&(payload.direccion_corregida||payload.direccionConfirma))||undefined,
+      confirmacion:(payload&&payload.confirmacion)||undefined,
       solution_payload:payload
     });
     if(!(resolved&&resolved.ok)){
