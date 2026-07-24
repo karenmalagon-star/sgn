@@ -1853,14 +1853,24 @@ SGN.users = [];
 
 // helper: llamar edge functions con la sesion del usuario
 async function sgnFn(name, body){
-  var s = await SGN.client.auth.getSession();
-  var token = (s.data && s.data.session) ? s.data.session.access_token : '';
-  var res = await fetch('https://znnrbpqorjrusvdasptq.supabase.co/functions/v1/' + name, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token, 'apikey': 'sb_publishable_XXDm1EcWu1z8lx9DtnD0sg_vHieiEcT'},
-    body: JSON.stringify(body)
-  });
-  return await res.json().catch(function(){ return {ok: false, error: 'HTTP ' + res.status}; });
+  async function _tok(){ var s = await SGN.client.auth.getSession(); return (s.data && s.data.session) ? s.data.session.access_token : ''; }
+  function _call(token){
+    return fetch('https://znnrbpqorjrusvdasptq.supabase.co/functions/v1/' + name, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token, 'apikey': 'sb_publishable_XXDm1EcWu1z8lx9DtnD0sg_vHieiEcT'},
+      body: JSON.stringify(body)
+    });
+  }
+  var token = await _tok();
+  var res = await _call(token);
+  if(res.status === 401){ // token vencido: refrescar la sesion y reintentar una vez
+    try { await SGN.client.auth.refreshSession(); } catch(e){}
+    token = await _tok();
+    if(token){ res = await _call(token); }
+  }
+  var out = await res.json().catch(function(){ return {ok: false, error: 'HTTP ' + res.status}; });
+  if(res.status === 401 && out && !out.ok){ out.error = 'Sesion expirada. Cierra sesion y vuelve a iniciar sesion.'; out.authExpired = true; }
+  return out;
 }
 
 // ── datos: ahora tambien motivos de devolucion ──
