@@ -1387,7 +1387,7 @@ function sgnBuildTiendas(){
     var a = agg[s.id] || {reg:0,cas:0};
     return {id:s.id, n:s.store_name, cat:s.category||'—', pais:s.country,
       pregpais:PAIS_NOMBRE[s.country]||s.country, reg:a.reg, hist:0, cas:a.cas,
-      est:s.urgente?'Urgente':(a.reg>0?'Pendiente':'Al dia'), urg:!!s.urgente, hist2:!!s.historicas};
+      est:s.urgente?'Urgente':(a.reg>0?'Pendiente':'Al dia'), urg:!!s.urgente, hist2:!!s.historica};
   });
   TIENDAS.sort(function(a,b){return (b.urg?1:0)-(a.urg?1:0) || b.reg-a.reg;});
 }
@@ -1585,7 +1585,10 @@ filterTiendas = function(){
       var urgBtn=t.urg
         ?'<button class="btn bsm" onclick="sgnSMo(\'qu\','+t.id+')">Quitar urg.</button>'
         :'<button class="btn br2 bsm" onclick="sgnSMo(\'mu\','+t.id+')">Urgente</button>';
-      btnHtml=urgBtn+btnHtml;
+      var histBtn=t.hist2
+        ?'<button class="btn bsm" onclick="sgnSMo(\'qh\','+t.id+')">Quitar hist.</button>'
+        :'<button class="btn bsm" onclick="sgnSMo(\'mh\','+t.id+')">Historica</button>';
+      btnHtml=urgBtn+histBtn+btnHtml;
     }
     rows+='<tr class="'+rowCls+'">'
       +'<td><div class="tname"><div class="pbar '+pbarCls+'"></div><span class="tntext">'+sgnEsc(t.n)+'</span>'+urgTag+histTag+'</div></td>'
@@ -1609,17 +1612,19 @@ function sgnSMo(tp,id){
   var nm=sgnEsc(st.store_name);
   var cfg={
     mu:{t:'Marcar urgente — '+nm,b:'<div class="al ag">Esta tienda aparecera marcada como urgente para todos los agentes.</div>',btn:'Marcar urgente',bc:'br2'},
-    qu:{t:'Quitar urgencia — '+nm,b:'<div class="al an">La tienda volvera a ordenarse normalmente.</div>',btn:'Quitar urgencia',bc:'bp'}
+    qu:{t:'Quitar urgencia — '+nm,b:'<div class="al an">La tienda volvera a ordenarse normalmente.</div>',btn:'Quitar urgencia',bc:'bp'},
+    mh:{t:'Marcar historica — '+nm,b:'<div class="al ag">La tienda quedara marcada como HISTORICA para poder filtrarla aparte.</div>',btn:'Marcar historica',bc:'br2'},
+    qh:{t:'Quitar historica — '+nm,b:'<div class="al an">La tienda dejara de estar marcada como historica.</div>',btn:'Quitar historica',bc:'bp'}
   };
   var c=cfg[tp];if(!c)return;
   document.getElementById('mosc').innerHTML='<div class="mh"><div class="mt">'+c.t+'</div><button class="mc" onclick="closeMo(\'mos\')">&#xD7;</button></div><div class="mb">'+c.b+'</div><div class="mf"><button class="btn bsm" onclick="closeMo(\'mos\')">Cancelar</button><button class="btn '+c.bc+' bsm" onclick="sgnSMoOk(\''+tp+'\','+id+')">'+c.btn+'</button></div>';
   document.getElementById('mos').classList.add('open');
 }
 async function sgnSMoOk(tp,id){
-  var upd=tp==='mu'?{urgente:true}:{urgente:false};
+  var upd=(tp==='mu')?{urgente:true}:(tp==='qu')?{urgente:false}:(tp==='mh')?{historica:true}:{historica:false};
   var r=await SGN.client.from('stores').update(upd).eq('id',id);
   if(r.error){alert('Error: '+r.error.message);return;}
-  SGN.stores.forEach(function(s){if(s.id===id)s.urgente=upd.urgente;});
+  SGN.stores.forEach(function(s){if(s.id===id){if('urgente' in upd)s.urgente=upd.urgente;if('historica' in upd)s.historica=upd.historica;}});
   sgnBuildTiendas();closeMo('mos');
   if(curPg==='tiendas')sgnRenderBase('tiendas');
 }
@@ -1987,10 +1992,9 @@ async function sgnBuscar(){
   res.innerHTML=html+'</tbody></table></div>';
 }
 function sgnVerOrden(orderId){
-  var n=null;SGN.novedades.forEach(function(x){if(x.order_id===orderId)n=x;});
-  if(!n)return;
-  SGN.curStoreId=n.store_id;
-  sgnGest(orderId);
+  var n=null;SGN.novedades.forEach(function(x){if(String(x.order_id)===String(orderId))n=x;});
+  if(n){SGN.curStoreId=n.store_id;sgnGest(String(n.order_id));return;}
+  sgnVerNotas(orderId); // no esta en las activas (cerrada u otra): abrir notas en modo lectura
 }
 
 // ── modal de gestion v2: campo Solucion Dropi + boton Maps ──
@@ -3405,7 +3409,7 @@ openGest = function(id,ca,cl,tel,pa,tp,inp){
     +'<div id="z-ok" style="display:none"><div class="fld"><label>Comentario <span class="req">Obligatorio</span> <span style="font-size:10.5px;color:var(--t3);font-weight:400">(nota interna: que se hablo en la llamada)</span></label><textarea id="cm-ok" placeholder="Ej: Cliente confirma que si recibira el pedido, se aclara la direccion..." oninput="updB()"></textarea></div></div>'
     +'<div id="z-no" style="display:none"><div class="fld"><label>Comentario <span class="req">Obligatorio</span> <span style="font-size:10.5px;color:var(--t3);font-weight:400">(nota interna del intento)</span></label><textarea id="cm-no" placeholder="Contexto del intento (no contesto, buzon, etc.)..." oninput="updB()"></textarea></div></div>'
     +'<div id="z-rev" style="display:none"><div class="fld"><label>Motivo de revision</label><div style="display:flex;flex-direction:column;gap:5px;margin-top:5px"><button class="nbt" id="nb1" onclick="selNt(1)">&#x1F550; Cliente aun no define fecha de entrega</button><button class="nbt" id="nb2" onclick="selNt(2)">&#x1F4CD; Falta un dato de direccion</button><button class="nbt" id="nb3" onclick="selNt(3)">&#x1F464; Se espera respuesta del dropshipper</button></div></div></div>'
-    +'<div id="z-dev" style="display:none"><div class="fld"><label>Nota interna <span style="font-size:10.5px;color:var(--t3);font-weight:400">(opcional: por que se devuelve — el motivo y detalle del return van en Solucion Dropi)</span></label><textarea id="cm-dev" placeholder="Contexto para el equipo..." oninput="updB()"></textarea></div></div>'
+    +'<div id="z-dev" style="display:none"><div class="fld"><label>Motivo de devolucion <span style="font-size:10.5px;color:var(--t3);font-weight:400">(se ve en la lista con el ojito, sin descargar el reporte)</span></label><select id="gDevMot" onchange="updB()" style="font-size:12.5px;padding:7px 11px;border:1px solid var(--bdr2);border-radius:var(--rs);background:var(--sur);color:var(--tx);font-family:inherit;width:100%;margin-top:3px">'+motOpts+'</select></div><div class="fld" style="margin-top:9px"><label>Nota interna <span style="font-size:10.5px;color:var(--t3);font-weight:400">(opcional)</span></label><textarea id="cm-dev" placeholder="Contexto para el equipo..." oninput="updB()"></textarea></div></div>'
     +'<div id="z-cas" style="display:none"><div class="fld"><label>Descripcion del CAS <span class="req">Obligatorio</span></label><textarea id="cm-cas" placeholder="Describe el motivo del CAS..." oninput="updB()"></textarea></div></div>'
 
     // ── SOLUCION DROPI (seccion independiente; obligatoria solo para Contacto/Sin contacto/Devolver) ──
@@ -3528,7 +3532,7 @@ guardar = async function(){
   if(gAc==='ok')comentario=v('cm-ok');
   if(gAc==='no')comentario=v('cm-no');
   if(gAc==='cas')comentario=v('cm-cas');
-  if(gAc==='dev')comentario=v('cm-dev')||null;
+  if(gAc==='dev'){comentario=v('cm-dev')||null;motivo=v('gDevMot')||null;}
   if(gAc==='rev')nota=['Cliente aun no define fecha de entrega','Falta un dato de direccion','Se espera respuesta del dropshipper'][gNt-1]||null;
   // Solucion Dropi (campo independiente; solo Contacto/Sin contacto/Devolver la exigen)
   if(DROPI_REQ[gAc]){
