@@ -2500,19 +2500,40 @@ sgnRenderProd = async function(){
   var rows=[];{var _o=0;while(true){var _g=await SGN.client.from('gestiones').select('agente_id,accion,created_at,order_id,store_name,resolved_in_dropi').gte('created_at',SGN.prodDesde+'T00:00:00-05:00').lte('created_at',SGN.prodHasta+'T23:59:59-05:00').order('created_at',{ascending:false}).range(_o,_o+999);var _d=_g.data||[];rows=rows.concat(_d);if(_d.length<1000)break;_o+=1000;if(rows.length>200000)break;}}
   var novList=[];{var _o2=0;while(true){var _n=await SGN.client.from('novedades').select('order_id,store_name,broker_created_at,intentos,estado_local').range(_o2,_o2+999);var _d2=_n.data||[];novList=novList.concat(_d2);if(_d2.length<1000)break;_o2+=1000;if(novList.length>200000)break;}}
   var novMap={};novList.forEach(function(n){novMap[String(n.order_id)]=n;});
+  SGN.prodCache={agentes:agentes,rows:rows,novList:novList,novMap:novMap,vw:vw};
   if(vw==='tienda'){sgnMetricasTienda(rows,novList,novMap);return;}
   sgnMetricasAgente(agentes,rows,novMap);
 };
 
 sgnMetricasTab = function(v){SGN.metricasView=v;sgnRenderProd();};
 
+sgnMetricasAgenteRefiltrar = function(){
+  if(!SGN.prodCache||SGN.prodCache.vw!=='agente'){sgnRenderProd();return;}
+  sgnMetricasAgente(SGN.prodCache.agentes,SGN.prodCache.rows,SGN.prodCache.novMap);
+};
+sgnAgFiltroToggle = function(){SGN.agPanelOpen=!SGN.agPanelOpen;sgnMetricasAgenteRefiltrar();};
+sgnAgFiltroToggleAgente = function(id,checked){
+  if(!Array.isArray(SGN.prodAgentes))SGN.prodAgentes=[];
+  var i=SGN.prodAgentes.indexOf(id);
+  if(checked){if(i===-1)SGN.prodAgentes.push(id);}else{if(i>-1)SGN.prodAgentes.splice(i,1);}
+  SGN.agPanelOpen=true;
+  sgnMetricasAgenteRefiltrar();
+};
+sgnAgFiltroTodos = function(){
+  SGN.prodAgentes=((SGN.prodCache&&SGN.prodCache.agentes)||[]).map(function(a){return a.id;});
+  SGN.agPanelOpen=true;
+  sgnMetricasAgenteRefiltrar();
+};
+sgnAgFiltroLimpiar = function(){SGN.prodAgentes=[];SGN.agPanelOpen=true;sgnMetricasAgenteRefiltrar();};
+
 sgnMetricasAgente = function(agentes,rows,novMap){
   var TIPOS=['contacto','sin_contacto','devolucion','cas','transportadora','en_revision'];
-  function nuevo(){var o={total:0,tmrSum:0,tmrN:0,dropiOk:0,dropiN:0,orders:{},reincOrders:{}};TIPOS.forEach(function(t){o[t]=0;});return o;}
+  function nuevo(){var o={total:0,tmrSum:0,tmrN:0,dropiOk:0,dropiN:0,orders:{},reincOrders:{},diasSet:{}};TIPOS.forEach(function(t){o[t]=0;});return o;}
   function acum(b,r){
     b.total++;
     if(TIPOS.indexOf(r.accion)>-1)b[r.accion]++;
     var oid=String(r.order_id);if(oid)b.orders[oid]=1;
+    var dk=String(r.created_at||'').slice(0,10);if(dk)b.diasSet[dk]=1;
     var n=novMap[oid];
     if(n&&n.broker_created_at){var dt=(new Date(r.created_at)-new Date(n.broker_created_at))/36e5;if(dt>=0&&dt<24*120){b.tmrSum+=dt;b.tmrN++;}}
     if(r.resolved_in_dropi===true||r.resolved_in_dropi===false){b.dropiN++;if(r.resolved_in_dropi===true)b.dropiOk++;}
@@ -2527,38 +2548,73 @@ sgnMetricasAgente = function(agentes,rows,novMap){
     for(var d=new Date(SGN.prodDesde+'T12:00:00');d<=dB;d.setDate(d.getDate()+1)){t+=(metas[(d.getDay()+6)%7]||0);}
     return t;
   }
-  var selAg=SGN.prodAgente||'';
-  var agentesMostrar=selAg?agentes.filter(function(a){return a.id===selAg;}):agentes;
-  var genShow=selAg?(byAg[selAg]||nuevo()):gen;
-  var totalGest=0,enMeta=0,superaron=0,debajo=0,trs='';
+  function diasPeriodo(){
+    var d1=new Date(SGN.prodDesde+'T12:00:00'),d2=new Date(SGN.prodHasta+'T12:00:00');
+    var dif=Math.round((d2-d1)/864e5)+1;
+    return dif>0?dif:1;
+  }
+  var dias=diasPeriodo();
+  var selAgs=Array.isArray(SGN.prodAgentes)?SGN.prodAgentes:[];
+  var agentesMostrar=selAgs.length?agentes.filter(function(a){return selAgs.indexOf(a.id)>-1;}):agentes;
+  var genShow=gen;
+  if(selAgs.length&&selAgs.length<agentes.length){
+    genShow=nuevo();
+    agentesMostrar.forEach(function(a){
+      var b=byAg[a.id]||nuevo();
+      genShow.total+=b.total;TIPOS.forEach(function(t){genShow[t]+=b[t];});
+      genShow.tmrSum+=b.tmrSum;genShow.tmrN+=b.tmrN;genShow.dropiOk+=b.dropiOk;genShow.dropiN+=b.dropiN;
+      Object.keys(b.orders).forEach(function(k){genShow.orders[k]=1;});
+      Object.keys(b.reincOrders).forEach(function(k){genShow.reincOrders[k]=1;});
+    });
+  }
+  var totalGest=0,enMeta=0,superaron=0,debajo=0,trs='',sumaPromIndiv=0;
   agentesMostrar.forEach(function(a){
     var c=byAg[a.id]||nuevo();
     var target=metaRango(a.metas_dia),pct=target?Math.round(c.total/target*100):0;
     totalGest+=c.total;
     if(pct>100)superaron++;else if(pct>=80)enMeta++;else debajo++;
     var col=pct>100?'var(--gold)':pct>=80?'var(--grn)':'var(--red)';
+    var diasTrab=Object.keys(c.diasSet||{}).length;
+    var promDiaNum=diasTrab?(c.total/diasTrab):0;
+    sumaPromIndiv+=promDiaNum;
+    var promDia=promDiaNum.toFixed(1);
     trs+='<tr><td><div style="display:flex;align-items:center;gap:8px"><div class="av avn">'+sgnInitials(a.full_name||'?')+'</div><span style="font-size:12.5px;font-weight:500">'+sgnEsc(a.full_name||'—')+'</span><button class="btn bsm" title="Ver gestiones del agente" style="padding:2px 7px;margin-left:4px" onclick="sgnAgenteDetalle(\''+a.id+'\',\''+sgnEsc((a.full_name||'').replace(/\x27/g,''))+'\')">&#x1F50E;</button></div></td>'
       +'<td><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;height:6px;background:var(--sur2);border-radius:3px;overflow:hidden;max-width:90px"><div style="height:100%;width:'+Math.min(100,pct)+'%;background:'+col+'"></div></div><span style="font-size:12px;color:'+col+';font-weight:600">'+pct+'%</span></div></td>'
       +'<td>'+c.contacto+sgnPctSpan(c.contacto,c.total)+'</td><td>'+c.sin_contacto+sgnPctSpan(c.sin_contacto,c.total)+'</td><td>'+c.devolucion+sgnPctSpan(c.devolucion,c.total)+'</td><td>'+c.cas+sgnPctSpan(c.cas,c.total)+'</td><td>'+c.transportadora+sgnPctSpan(c.transportadora,c.total)+'</td><td>'+c.en_revision+sgnPctSpan(c.en_revision,c.total)+'</td><td><strong>'+c.total+'</strong></td>'
+      +'<td title="'+diasTrab+' dia(s) con gestiones">'+promDia+'</td>'
       +'<td>'+sgnTmrFmt(c)+'</td>'+sgnPctCell(sgnPctDropi(c),false)+sgnPctCell(sgnPctReinc(c),true)+'</tr>';
   });
-  if(!trs)trs='<tr><td colspan="12" style="text-align:center;padding:24px;color:var(--t3);font-size:13px">No hay agentes activos o no hay gestiones en este periodo.</td></tr>';
+  if(!trs)trs='<tr><td colspan="13" style="text-align:center;padding:24px;color:var(--t3);font-size:13px">No hay agentes activos o no hay gestiones en este periodo.</td></tr>';
+  var promEquipo=(totalGest/dias).toFixed(1);
+  var promPorAgente=agentesMostrar.length?(sumaPromIndiv/agentesMostrar.length).toFixed(1):'0.0';
+  var panelOpen=!!SGN.agPanelOpen;
+  var idsAct=agentes.map(function(a){return a.id;});
+  var todosSel=selAgs.length===0||idsAct.every(function(id){return selAgs.indexOf(id)>-1;});
+  var btnLabel=todosSel?'Todos los agentes':(selAgs.length===1?(function(){var a=null;agentes.forEach(function(x){if(x.id===selAgs[0])a=x;});return a?sgnEsc(a.full_name||'1 agente'):'1 agente';})():selAgs.length+' agentes seleccionados');
   var body=document.getElementById('pr-body');if(!body)return;
   body.innerHTML=
-    '<div style="margin-bottom:12px"><label style="font-size:11px;font-weight:600;color:var(--t2);margin-right:6px">Agente:</label><select onchange="SGN.prodAgente=this.value;sgnRenderProd()" style="font-size:12px;padding:5px 10px;border:1px solid var(--bdr2);border-radius:var(--rs);background:var(--sur);color:var(--tx);font-family:inherit"><option value="">Todos los agentes</option>'+agentes.map(function(a){return '<option value="'+a.id+'"'+(selAg===a.id?' selected':'')+'>'+sgnEsc(a.full_name||a.id)+'</option>';}).join('')+'</select></div>'
+    '<div style="margin-bottom:12px;position:relative;display:inline-block" id="pr-ag-wrap">'
+    +'<label style="font-size:11px;font-weight:600;color:var(--t2);margin-right:6px;display:block;margin-bottom:4px">Agente:</label>'
+    +'<button type="button" class="btn bsm" style="min-width:190px;text-align:left;display:flex;justify-content:space-between;align-items:center;gap:8px" onclick="sgnAgFiltroToggle()">'+btnLabel+' <span style="font-size:10px">&#9662;</span></button>'
+    +'<div id="pr-ag-panel" style="display:'+(panelOpen?'block':'none')+';position:absolute;top:100%;left:0;margin-top:4px;background:var(--sur);border:1px solid var(--bdr2);border-radius:var(--rs);box-shadow:0 4px 14px rgba(0,0,0,.18);padding:8px;z-index:50;max-height:260px;overflow:auto;min-width:230px">'
+    +'<div style="display:flex;gap:6px;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--bdr)"><button type="button" class="btn bsm" onclick="sgnAgFiltroTodos()">Todos</button><button type="button" class="btn bsm" onclick="sgnAgFiltroLimpiar()">Limpiar</button></div>'
+    +agentes.map(function(a){var checked=selAgs.length===0||selAgs.indexOf(a.id)>-1;return '<label style="display:flex;align-items:center;gap:7px;padding:4px 2px;font-size:12.5px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="'+a.id+'" onchange="sgnAgFiltroToggleAgente(\''+a.id+'\',this.checked)"'+(checked?' checked':'')+'> '+sgnEsc(a.full_name||a.id)+'</label>';}).join('')
+    +'</div></div>'
     +'<div class="sg" style="margin-bottom:14px"><div class="sc"><div class="sn">'+totalGest+'</div><div class="sl">Gestiones en periodo</div></div>'
+    +'<div class="sc" style="border-top:2px solid var(--navy)"><div class="sn">'+promEquipo+'</div><div class="sl">Promedio gestiones/dia (equipo)</div></div>'
+    +'<div class="sc" style="border-top:2px solid var(--navy)"><div class="sn">'+promPorAgente+'</div><div class="sl">Promedio gestiones/dia por agente</div></div>'
     +'<div class="sc" style="border-top:2px solid var(--grn)"><div class="sn" style="color:var(--grn)">'+enMeta+'</div><div class="sl">En meta</div></div>'
     +'<div class="sc" style="border-top:2px solid var(--gold)"><div class="sn" style="color:var(--gold)">'+superaron+'</div><div class="sl">Superaron meta</div></div>'
     +'<div class="sc" style="border-top:2px solid var(--red)"><div class="sn" style="color:var(--red)">'+debajo+'</div><div class="sl">Por debajo</div></div></div>'
     +'<div class="sg" style="margin-bottom:16px"><div class="sc" style="border-top:2px solid var(--navy)"><div class="sn">'+sgnTmrFmt(genShow)+'</div><div class="sl">TMR (tiempo medio resolucion)</div></div>'
     +'<div class="sc" style="border-top:2px solid var(--grn)"><div class="sn" style="color:var(--grn)">'+(sgnPctDropi(genShow)===null?'—':sgnPctDropi(genShow)+'%')+'</div><div class="sl">Resuelto en Dropi (1er intento)</div></div>'
     +'<div class="sc" style="border-top:2px solid var(--red)"><div class="sn" style="color:var(--red)">'+(sgnPctReinc(genShow)===null?'—':sgnPctReinc(genShow)+'%')+'</div><div class="sl">Reincidencia</div></div></div>'
-    +'<div class="card cb" style="margin-bottom:14px"><div style="font-size:13px;font-weight:600;color:var(--tx);margin-bottom:11px;padding-bottom:9px;border-bottom:1px solid var(--bdr)">Gestiones por tipo '+(selAg?'(agente seleccionado)':'(general)')+'</div>'
+    +'<div class="card cb" style="margin-bottom:14px"><div style="font-size:13px;font-weight:600;color:var(--tx);margin-bottom:11px;padding-bottom:9px;border-bottom:1px solid var(--bdr)">Gestiones por tipo '+(todosSel?'(general)':'(seleccion actual)')+'</div>'
     +'<div style="display:flex;gap:10px;flex-wrap:wrap">'
     +[['contacto','Contacto'],['sin_contacto','Sin contacto'],['devolucion','Devolver'],['cas','CAS'],['transportadora','Transportadora'],['en_revision','En revision']].map(function(p){var v=genShow[p[0]],pc=genShow.total?Math.round(v/genShow.total*100):0;return '<div style="flex:1;min-width:115px;background:var(--sur2);border-radius:var(--rs);padding:10px 12px"><div style="font-size:18px;font-weight:700;color:var(--tx)">'+v+'</div><div style="font-size:11px;color:var(--t2)">'+p[1]+' <span style="color:var(--t3)">('+pc+'%)</span></div></div>';}).join('')
     +'</div></div>'
-    +'<div class="card"><div class="tw"><table><thead><tr><th>Agente</th><th>Progreso</th><th>Contacto</th><th>Sin contacto</th><th>Devolver</th><th>CAS</th><th>Transp.</th><th>En revision</th><th>Total</th><th>TMR</th><th>% Dropi 1er</th><th>% Reinc.</th></tr></thead><tbody>'+trs+'</tbody></table></div></div>'
-    +'<p class="ps" style="margin-top:8px;font-size:11px">TMR: promedio desde que la novedad aparece hasta que se gestiona &middot; % Dropi 1er: efectividad del resolve en Dropi &middot; % Reinc.: ordenes que requirieron 2+ intentos.</p>';
+    +'<div class="card"><div class="tw"><table><thead><tr><th>Agente</th><th>Progreso</th><th>Contacto</th><th>Sin contacto</th><th>Devolver</th><th>CAS</th><th>Transp.</th><th>En revision</th><th>Total</th><th>Prom/dia</th><th>TMR</th><th>% Dropi 1er</th><th>% Reinc.</th></tr></thead><tbody>'+trs+'</tbody></table></div></div>'
+    +'<p class="ps" style="margin-top:8px;font-size:11px">TMR: promedio desde que la novedad aparece hasta que se gestiona &middot; % Dropi 1er: efectividad del resolve en Dropi &middot; % Reinc.: ordenes que requirieron 2+ intentos (calculado sobre las ordenes gestionadas por cada agente) &middot; Prom/dia (columna): gestiones del agente / solo los dias en que ese agente gestiono (no cuenta dias sin actividad) &middot; Promedio por agente (tarjeta): promedio de esos promedios individuales &middot; Promedio equipo (tarjeta): total del periodo / dias calendario del periodo.</p>';
 };
 
 sgnMetricasTienda = function(rows,novList,novMap){
