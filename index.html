@@ -697,7 +697,7 @@ function renderPg(pg){
       +'<input type="text" id="tf-buscar" placeholder="Buscar tienda..." oninput="filterTiendas()">'
       +'<select id="tf-estado" onchange="filterTiendas()"><option value="">Todos los estados</option><option>Urgente</option><option>Pendiente</option><option>Al dia</option></select>'
       +'<select id="tf-activa" onchange="filterTiendas()" title="Estado de la tienda en Fenix"><option value="act">Activas</option><option value="pau">Inactivas (pausadas)</option><option value="all">Todas</option></select>'
-      +'<select id="tf-alerta" onchange="filterTiendas()" title="Alarma de novedades"><option value="">Todas las alertas</option><option value="alarma">+3 dias sin novedades</option><option value="sv">Marcadas "Sin ventas"</option></select>'
+      +'<select id="tf-alerta" onchange="filterTiendas()" title="Alarma de novedades"><option value="">Todas las tiendas</option><option value="alarma">Con ventas y sin novedades (+3 dias)</option><option value="sinnov">Activas sin novedades</option><option value="connov">Activas con novedades</option><option value="sv">Marcadas "Sin ventas"</option></select>'
       +'<select id="tf-tipo" onchange="filterTiendas()"><option value="">Todos los tipos</option><option value="reg">Solo regulares</option><option value="hist">Solo historicas</option></select>'
       +'<select id="tf-pais" onchange="filterTiendas()"><option value="">Todos los paises</option><option value="CL">Chile</option><option value="EC">Ecuador</option><option value="MX">Mexico</option><option value="GT">Guatemala</option><option value="CO">Colombia</option></select>'
       +'</div>'
@@ -2777,6 +2777,7 @@ sgnRenderSeguimiento = async function(){
   var now=Date.now(),DAY=864e5;
   var novs=[],off=0;
   while(true){var r=await SGN.client.from('novedades').select('order_id,store_id,store_name,estado_local,client_name,broker_created_at,intentos').in('estado_local',['en_revision','cas_abierto']).range(off,off+999);var d=r.data||[];novs=novs.concat(d);if(d.length<1000)break;off+=1000;if(novs.length>30000)break;}
+  novs=sgnSoloTiendasActivas(novs);
   var ids=novs.map(function(n){return String(n.order_id);});
   var lastG={};
   for(var i=0;i<ids.length;i+=200){var ch=ids.slice(i,i+200);var g=await SGN.client.from('gestiones').select('order_id,created_at,nota_revision,comentario,solucion_dropi,motivo_devolucion').in('order_id',ch).order('created_at',{ascending:false}).limit(5000);(g.data||[]).forEach(function(x){var k=String(x.order_id);if(!lastG[k])lastG[k]={at:x.created_at,nota:x.nota_revision||x.comentario||x.solucion_dropi||x.motivo_devolucion||''};});}
@@ -3123,7 +3124,13 @@ function sgnTdComments(){
 // ── ALARMA +3 dias sin novedades / marca "Sin ventas" ──
 function sgnVerAlarma(){
   var a=document.getElementById('tf-activa'),b=document.getElementById('tf-alerta');
-  if(a)a.value='act';if(b)b.value='alarma';
+  if(a)a.value='act';
+  if(b)b.value=(b.value==='alarma')?'':'alarma';   // 2o clic = quitar el filtro
+  filterTiendas();
+}
+function sgnQuitarFiltros(){
+  var a=document.getElementById('tf-activa'),b=document.getElementById('tf-alerta');
+  if(a)a.value='act';if(b)b.value='';
   filterTiendas();
 }
 async function sgnStoreSinVentas(id,marcar){
@@ -3137,7 +3144,11 @@ async function sgnStoreSinVentas(id,marcar){
 }
 async function sgnMarcarAlarmasSinVentas(){
   var ids=(SGN._alarmaIds||[]).slice();if(!ids.length)return;
-  if(!confirm('¿Marcar '+ids.length+' tiendas como SIN VENTAS?\n\nSon tiendas activas en Fenix con +3 dias sin novedades. Dejan de salir en la alarma y la marca se quita sola cuando vuelvan a reportar novedades.'))return;
+  var nombres=[];(SGN.stores||[]).forEach(function(s){if(ids.indexOf(s.id)>-1)nombres.push(s.store_name);});
+  var muestra=nombres.slice(0,8).join(', ')+(nombres.length>8?' ... y '+(nombres.length-8)+' mas':'');
+  if(!confirm('VERIFICACION 1 de 2\n\n¿Marcar '+ids.length+' tiendas como SIN VENTAS?\n\n'+muestra+'\n\nSon tiendas activas en Fenix con +3 dias sin novedades. Dejan de salir en la alarma y la marca se quita sola cuando vuelvan a reportar novedades.'))return;
+  var resp=prompt('VERIFICACION 2 de 2\n\nEsta accion afecta a '+ids.length+' tiendas.\nPara confirmar escribe el numero '+ids.length+':');
+  if(resp===null||String(resp).trim()!==String(ids.length)){alert('Cancelado: no se marco ninguna tienda.');return;}
   var val=new Date().toISOString();
   var r=await SGN.client.from('stores').update({sin_ventas_desde:val}).in('id',ids);
   if(r.error){alert('No se pudo guardar: '+r.error.message);return;}
@@ -3188,6 +3199,7 @@ filterTiendas = function(){
   var pais=document.getElementById('tf-pais')?document.getElementById('tf-pais').value:'';
   var isAg=role==='ag';
   var actSel=document.getElementById('tf-activa')?document.getElementById('tf-activa').value:'act';
+  if(isAg){actSel='act';var _sa=document.getElementById('tf-activa');if(_sa)_sa.style.display='none';}
   var alerta=document.getElementById('tf-alerta')?document.getElementById('tf-alerta').value:'';
   var verPausadas=(actSel==='pau');
   var nPausadas=TIENDAS.filter(function(t){return t.act===false;}).length;
@@ -3197,6 +3209,8 @@ filterTiendas = function(){
     else if(actSel!=='all'&&t.act===false)return false;
     if(alerta==='alarma'&&!t.alarma)return false;
     if(alerta==='sv'&&!t.sv)return false;
+    if(alerta==='sinnov'&&((t.reg||0)+(t.cas||0))>0)return false;
+    if(alerta==='connov'&&((t.reg||0)+(t.cas||0))===0)return false;
     if(buscar&&t.n.toLowerCase().indexOf(buscar)===-1)return false;
     if(estado==='Urgente'&&!t.urg)return false;
     if(estado==='Pendiente'&&t.est!=='Pendiente')return false;
@@ -3233,7 +3247,8 @@ filterTiendas = function(){
         '<span style="font-size:12px;color:var(--navy);font-weight:600">Novedades pendientes</span>'
         +'<span style="font-size:12.5px;color:var(--t2)">Pendientes: <strong style="color:var(--navy)">'+totalReg+'</strong></span>'
         +'<span style="font-size:12.5px;color:var(--t2)">CAS abiertos: <strong style="color:var(--red)">'+totalCas+'</strong></span>'
-        +((isAg||!SGN.actividadOk)?'':'<button class="btn bsm" style="border-color:var(--amb);color:var(--amb)" title="Tiendas activas con mas de 3 dias sin novedades nuevas" onclick="sgnVerAlarma()">&#x26A0; '+nAlarma+' tiendas +3 dias sin novedades</button><span style="font-size:12.5px;color:var(--t2)">Sin ventas: <strong>'+nSV+'</strong></span>')
+        +((isAg||!SGN.actividadOk)?'':'<button class="btn bsm" style="border-color:var(--amb);color:var(--amb)" title="Tiendas activas con mas de 3 dias sin novedades nuevas" onclick="sgnVerAlarma()">&#x26A0; '+nAlarma+' tiendas con ventas y +3 dias sin novedades'+(alerta==='alarma'?' &#x2713;':'')+'</button><span style="font-size:12.5px;color:var(--t2)">Sin ventas: <strong>'+nSV+'</strong></span>')
+        +((alerta||actSel!=='act')?'<button class="btn bsm" title="Volver a ver todas las tiendas activas" onclick="sgnQuitarFiltros()">&#x2715; Quitar filtro</button>':'')
         +((!isAg&&alerta==='alarma'&&SGN._alarmaIds.length)?'<button class="btn bsm" title="Son tiendas activas en Fenix pero sin ventas: dejan de salir en la alarma hasta que vuelvan a reportar novedades" onclick="sgnMarcarAlarmasSinVentas()">Marcar las '+SGN._alarmaIds.length+' como Sin ventas</button>':'')
         +(isAg?'':'<button class="btn bsm" style="margin-left:auto" title="Descarga todas las novedades activas (ID, tienda, motivo, fecha) para compararlas con Dropi" onclick="sgnExportNovedades(this)">&#x2B07; Descargar novedades</button>')
         +'<span style="'+(isAg?'margin-left:auto;':'')+'background:var(--navy);color:#fff;font-size:12px;font-weight:600;padding:4px 14px;border-radius:20px">Total: '+totalNov+'</span>';
