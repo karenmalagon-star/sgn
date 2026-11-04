@@ -695,7 +695,9 @@ function renderPg(pg){
       +'<div class="card">'
       +'<div class="sr">'
       +'<input type="text" id="tf-buscar" placeholder="Buscar tienda..." oninput="filterTiendas()">'
-      +'<select id="tf-estado" onchange="filterTiendas()"><option value="">Todos los estados</option><option>Urgente</option><option>Pendiente</option><option>Al dia</option><option>Pausada</option></select>'
+      +'<select id="tf-estado" onchange="filterTiendas()"><option value="">Todos los estados</option><option>Urgente</option><option>Pendiente</option><option>Al dia</option></select>'
+      +'<select id="tf-activa" onchange="filterTiendas()" title="Estado de la tienda en Fenix"><option value="act">Activas</option><option value="pau">Inactivas (pausadas)</option><option value="all">Todas</option></select>'
+      +'<select id="tf-alerta" onchange="filterTiendas()" title="Alarma de novedades"><option value="">Todas las alertas</option><option value="alarma">+3 dias sin novedades</option><option value="sv">Marcadas "Sin ventas"</option></select>'
       +'<select id="tf-tipo" onchange="filterTiendas()"><option value="">Todos los tipos</option><option value="reg">Solo regulares</option><option value="hist">Solo historicas</option></select>'
       +'<select id="tf-pais" onchange="filterTiendas()"><option value="">Todos los paises</option><option value="CL">Chile</option><option value="EC">Ecuador</option><option value="MX">Mexico</option><option value="GT">Guatemala</option><option value="CO">Colombia</option></select>'
       +'</div>'
@@ -1386,7 +1388,13 @@ function sgnBuildTiendas(){
   });
   TIENDAS = SGN.stores.map(function(s){
     var a = agg[s.id] || {reg:0,cas:0};
-    return {id:s.id, n:s.store_name, cat:s.category||'—', pais:s.country,
+    var _now=Date.now(),_DAY=864e5;
+    var _ult=(SGN.actividad&&SGN.actividad[s.id])?new Date(SGN.actividad[s.id]).getTime():null;
+    var _sv=!!s.sin_ventas_desde&&!(_ult&&_ult>new Date(s.sin_ventas_desde).getTime());
+    var _base=_ult||(s.first_seen_at?new Date(s.first_seen_at).getTime():null);
+    var _dias=_base?Math.floor((_now-_base)/_DAY):0;
+    var _alarma=!!SGN.actividadOk&&s.active!==false&&!_sv&&!!_base&&(_now-_base)>3*_DAY;
+    return {sv:_sv,alarma:_alarma,diasSin:_dias,nunca:!_ult,id:s.id, n:s.store_name, cat:s.category||'—', pais:s.country,
       pregpais:PAIS_NOMBRE[s.country]||s.country, reg:a.reg, hist:0, cas:a.cas,
       est:s.urgente?'Urgente':(a.reg>0?'Pendiente':'Al dia'), urg:!!s.urgente, hist2:!!s.historica, act:s.active!==false};
   });
@@ -1922,12 +1930,30 @@ sgnLoadData = async function(){
   var r2 = await sgnFetchAll(function(a,b){return SGN.client.from('novedades').select('*').neq('estado_local','cerrada_broker').order('order_id').range(a,b);});
   if(!r1.error) SGN.stores = r1.data || [];
   if(!r2.error) SGN.novedades = r2.data || [];
+  var r4 = await sgnFetchAll(function(a,b){return SGN.client.from('store_actividad').select('store_id,ultima_novedad').order('store_id').range(a,b);});
+  SGN.actividadOk = !r4.error;
+  if(!r4.error){var _m={};(r4.data||[]).forEach(function(x){_m[x.store_id]=x.ultima_novedad;});SGN.actividad=_m;}
   if(!SGN.motivos.length){
     var r3 = await SGN.client.from('motivos_devolucion').select('texto').eq('activo',true).order('orden');
     if(!r3.error && r3.data) SGN.motivos = r3.data.map(function(m){return m.texto;});
   }
+  sgnLimpiarSinVentas();
   sgnBuildTiendas();
 };
+// Si una tienda marcada "Sin ventas" vuelve a reportar novedades, la marca se quita sola
+function sgnLimpiarSinVentas(){
+  if(role!=='sup'||!SGN.actividadOk)return;
+  var ids=[];
+  (SGN.stores||[]).forEach(function(s){
+    if(!s.sin_ventas_desde)return;
+    var u=SGN.actividad&&SGN.actividad[s.id];
+    if(u&&new Date(u).getTime()>new Date(s.sin_ventas_desde).getTime())ids.push(s.id);
+  });
+  if(!ids.length)return;
+  SGN.client.from('stores').update({sin_ventas_desde:null}).in('id',ids).then(function(r){
+    if(!r.error)(SGN.stores||[]).forEach(function(s){if(ids.indexOf(s.id)>-1)s.sin_ventas_desde=null;});
+  });
+}
 
 // ── login: admin entra con vista de supervisor ──
 sgnEnter = async function(user){
@@ -3094,6 +3120,30 @@ function sgnTdComments(){
   crumb.parentNode.insertBefore(div,crumb.nextSibling);
 }
 
+// ── ALARMA +3 dias sin novedades / marca "Sin ventas" ──
+function sgnVerAlarma(){
+  var a=document.getElementById('tf-activa'),b=document.getElementById('tf-alerta');
+  if(a)a.value='act';if(b)b.value='alarma';
+  filterTiendas();
+}
+async function sgnStoreSinVentas(id,marcar){
+  var st=null;(SGN.stores||[]).forEach(function(s){if(s.id===id)st=s;});if(!st)return;
+  if(marcar&&!confirm('¿Marcar "'+st.store_name+'" como SIN VENTAS?\n\nSigue activa en Fenix pero no esta vendiendo. Deja de salir en la alarma y la marca se quita sola si vuelve a reportar novedades.'))return;
+  var val=marcar?new Date().toISOString():null;
+  var r=await SGN.client.from('stores').update({sin_ventas_desde:val}).eq('id',id);
+  if(r.error){alert('No se pudo guardar la marca: '+r.error.message);return;}
+  st.sin_ventas_desde=val;
+  sgnBuildTiendas();filterTiendas();
+}
+async function sgnMarcarAlarmasSinVentas(){
+  var ids=(SGN._alarmaIds||[]).slice();if(!ids.length)return;
+  if(!confirm('¿Marcar '+ids.length+' tiendas como SIN VENTAS?\n\nSon tiendas activas en Fenix con +3 dias sin novedades. Dejan de salir en la alarma y la marca se quita sola cuando vuelvan a reportar novedades.'))return;
+  var val=new Date().toISOString();
+  var r=await SGN.client.from('stores').update({sin_ventas_desde:val}).in('id',ids);
+  if(r.error){alert('No se pudo guardar: '+r.error.message);return;}
+  (SGN.stores||[]).forEach(function(s){if(ids.indexOf(s.id)>-1)s.sin_ventas_desde=val;});
+  sgnBuildTiendas();filterTiendas();
+}
 // ── PAUSAR / REACTIVAR tienda (se retiro de Fenix) ──
 async function sgnStorePausa(id,activar){
   var st=null;(SGN.stores||[]).forEach(function(s){if(s.id===id)st=s;});if(!st)return;
@@ -3137,12 +3187,16 @@ filterTiendas = function(){
   var tipo=document.getElementById('tf-tipo')?document.getElementById('tf-tipo').value:'';
   var pais=document.getElementById('tf-pais')?document.getElementById('tf-pais').value:'';
   var isAg=role==='ag';
-  var verPausadas=(estado==='Pausada');
+  var actSel=document.getElementById('tf-activa')?document.getElementById('tf-activa').value:'act';
+  var alerta=document.getElementById('tf-alerta')?document.getElementById('tf-alerta').value:'';
+  var verPausadas=(actSel==='pau');
   var nPausadas=TIENDAS.filter(function(t){return t.act===false;}).length;
   var activasList=TIENDAS.filter(function(t){return t.act!==false;});
   var filtered=TIENDAS.filter(function(t){
-    if(verPausadas){if(t.act!==false)return false;}
-    else if(t.act===false)return false;
+    if(actSel==='pau'){if(t.act!==false)return false;}
+    else if(actSel!=='all'&&t.act===false)return false;
+    if(alerta==='alarma'&&!t.alarma)return false;
+    if(alerta==='sv'&&!t.sv)return false;
     if(buscar&&t.n.toLowerCase().indexOf(buscar)===-1)return false;
     if(estado==='Urgente'&&!t.urg)return false;
     if(estado==='Pendiente'&&t.est!=='Pendiente')return false;
@@ -3163,7 +3217,10 @@ filterTiendas = function(){
     var nH2=filtered.filter(function(t){return t.hist2;}).length;
     var nAlDia=filtered.filter(function(t){return t.est==='Al dia';}).length;
     var hayFiltro=pais||estado||tipo||buscar;
-    var baseN=verPausadas?nPausadas:activasList.length;
+    var baseN=actSel==='pau'?nPausadas:(actSel==='all'?TIENDAS.length:activasList.length);
+    var nAlarma=activasList.filter(function(t){return t.alarma;}).length;
+    var nSV=activasList.filter(function(t){return t.sv;}).length;
+    SGN._alarmaIds=filtered.filter(function(t){return t.alarma;}).map(function(t){return t.id;});
     var filLabel=filtered.length<baseN?' <span style="font-size:10px;color:var(--t3)">de '+baseN+'</span>':'';
     stats.innerHTML=
       '<div class="sc" style="border-top:2px solid var(--navy)"><div class="sn">'+filtered.length+filLabel+'</div><div class="sl">Tiendas'+(verPausadas?' pausadas':(hayFiltro?' (filtradas)':' activas'))+'</div></div>'
@@ -3176,6 +3233,8 @@ filterTiendas = function(){
         '<span style="font-size:12px;color:var(--navy);font-weight:600">Novedades pendientes</span>'
         +'<span style="font-size:12.5px;color:var(--t2)">Pendientes: <strong style="color:var(--navy)">'+totalReg+'</strong></span>'
         +'<span style="font-size:12.5px;color:var(--t2)">CAS abiertos: <strong style="color:var(--red)">'+totalCas+'</strong></span>'
+        +((isAg||!SGN.actividadOk)?'':'<button class="btn bsm" style="border-color:var(--amb);color:var(--amb)" title="Tiendas activas con mas de 3 dias sin novedades nuevas" onclick="sgnVerAlarma()">&#x26A0; '+nAlarma+' tiendas +3 dias sin novedades</button><span style="font-size:12.5px;color:var(--t2)">Sin ventas: <strong>'+nSV+'</strong></span>')
+        +((!isAg&&alerta==='alarma'&&SGN._alarmaIds.length)?'<button class="btn bsm" title="Son tiendas activas en Fenix pero sin ventas: dejan de salir en la alarma hasta que vuelvan a reportar novedades" onclick="sgnMarcarAlarmasSinVentas()">Marcar las '+SGN._alarmaIds.length+' como Sin ventas</button>':'')
         +(isAg?'':'<button class="btn bsm" style="margin-left:auto" title="Descarga todas las novedades activas (ID, tienda, motivo, fecha) para compararlas con Dropi" onclick="sgnExportNovedades(this)">&#x2B07; Descargar novedades</button>')
         +'<span style="'+(isAg?'margin-left:auto;':'')+'background:var(--navy);color:#fff;font-size:12px;font-weight:600;padding:4px 14px;border-radius:20px">Total: '+totalNov+'</span>';
     }
@@ -3188,6 +3247,8 @@ filterTiendas = function(){
     var rowCls=t.urg?'ru':t.hist2?'rh':'';
     var pbarCls=t.urg?'pbn':t.hist2?'pbg':'pbgn';
     var urgTag=t.urg?'<span class="utag">&#x1F6A9; Urgente</span>':'';
+    var svTag=t.sv?'<span class="htag" style="background:var(--sur2);color:var(--t2)" title="Activa en Fenix pero sin ventas. La marca se quita sola si vuelve a reportar novedades">Sin ventas</span>':'';
+    var alTag=t.alarma?'<span class="utag" style="background:var(--goldl);color:var(--gold)" title="'+(t.nunca?'Nunca ha reportado novedades; ':'')+'sin novedades nuevas hace '+t.diasSin+' dias">&#x26A0; '+t.diasSin+'d sin novedades</span>':'';
     var noteTag=sgnStoreComments(t.id).length?'<span class="htag" title="Tiene notas especiales">&#x1F4CC; Nota</span>':'';
     var regColor=t.reg>0?'color:var(--red);font-weight:600':'color:var(--t3)';
     var estBadge=t.est==='Urgente'?'br':t.est==='Pendiente'?'bg':'bgn';
@@ -3198,13 +3259,16 @@ filterTiendas = function(){
         ?'<button class="btn bsm" onclick="sgnSMo(\'qu\','+t.id+')">Quitar urg.</button>'
         :'<button class="btn br2 bsm" onclick="sgnSMo(\'mu\','+t.id+')">Urgente</button>';
       btnHtml=urgBtn+btnHtml+'<button class="btn bgo bsm" onclick="goAnl('+t.id+')">Analizar</button>';
+      if(t.act!==false&&(t.alarma||t.sv))btnHtml+=(t.sv
+        ?'<button class="btn bsm" title="Quitar la marca Sin ventas" onclick="sgnStoreSinVentas('+t.id+',false)">Quitar sin ventas</button>'
+        :'<button class="btn bsm" title="Activa en Fenix pero no esta vendiendo: deja de salir en la alarma" onclick="sgnStoreSinVentas('+t.id+',true)">Sin ventas</button>');
       btnHtml+=(t.act===false
         ?'<button class="btn bsm" title="Volver a activar esta tienda" onclick="sgnStorePausa('+t.id+',true)">Reactivar</button>'
         :'<button class="btn bsm" title="Pausar: la tienda deja de aparecer en el panel y en los conteos (p. ej. se retiro de Fenix)" onclick="sgnStorePausa('+t.id+',false)">Pausar</button>');
     }
     if(t.act===false)rowCls+=' pausada';
     rows+='<tr class="'+rowCls+'">'
-      +'<td><div class="tname"><div class="pbar '+pbarCls+'"></div><span class="tntext">'+sgnEsc(t.n)+'</span>'+urgTag+noteTag+'</div></td>'
+      +'<td><div class="tname"><div class="pbar '+pbarCls+'"></div><span class="tntext">'+sgnEsc(t.n)+'</span>'+urgTag+alTag+svTag+noteTag+'</div></td>'
       +'<td><span class="badge bgr">'+sgnEsc(t.cat)+'</span></td>'
       +'<td>'+paisLabel+'</td>'
       +'<td style="'+regColor+'">'+(t.reg||'&#x2014;')+'</td>'
