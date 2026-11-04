@@ -36,6 +36,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backgrou
 .tav{width:26px;height:26px;border-radius:50%;background:rgba(255,208,48,.2);border:1.5px solid #FFD030;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#FFD030}
 .tname{font-size:12px;color:rgba(255,255,255,.7)}
 .content{flex:1;overflow-y:auto;background:var(--bg)}
+tr.pausada td{opacity:.55}
 .page{padding:24px 26px;display:none}.page.active{display:block}
 .card{background:var(--sur);border:1px solid var(--bdr);border-radius:var(--r);overflow:hidden;box-shadow:var(--sh);transition:background .2s,border .2s}
 .cb{padding:18px}.ch{padding:13px 18px;border-bottom:1px solid var(--bdr);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
@@ -694,7 +695,7 @@ function renderPg(pg){
       +'<div class="card">'
       +'<div class="sr">'
       +'<input type="text" id="tf-buscar" placeholder="Buscar tienda..." oninput="filterTiendas()">'
-      +'<select id="tf-estado" onchange="filterTiendas()"><option value="">Todos los estados</option><option>Urgente</option><option>Pendiente</option><option>Al dia</option></select>'
+      +'<select id="tf-estado" onchange="filterTiendas()"><option value="">Todos los estados</option><option>Urgente</option><option>Pendiente</option><option>Al dia</option><option>Pausada</option></select>'
       +'<select id="tf-tipo" onchange="filterTiendas()"><option value="">Todos los tipos</option><option value="reg">Solo regulares</option><option value="hist">Solo historicas</option></select>'
       +'<select id="tf-pais" onchange="filterTiendas()"><option value="">Todos los paises</option><option value="CL">Chile</option><option value="EC">Ecuador</option><option value="MX">Mexico</option><option value="GT">Guatemala</option><option value="CO">Colombia</option></select>'
       +'</div>'
@@ -1387,7 +1388,7 @@ function sgnBuildTiendas(){
     var a = agg[s.id] || {reg:0,cas:0};
     return {id:s.id, n:s.store_name, cat:s.category||'—', pais:s.country,
       pregpais:PAIS_NOMBRE[s.country]||s.country, reg:a.reg, hist:0, cas:a.cas,
-      est:s.urgente?'Urgente':(a.reg>0?'Pendiente':'Al dia'), urg:!!s.urgente, hist2:!!s.historica};
+      est:s.urgente?'Urgente':(a.reg>0?'Pendiente':'Al dia'), urg:!!s.urgente, hist2:!!s.historica, act:s.active!==false};
   });
   TIENDAS.sort(function(a,b){return (b.urg?1:0)-(a.urg?1:0) || b.reg-a.reg;});
 }
@@ -1898,9 +1899,27 @@ async function sgnFn(name, body){
 }
 
 // ── datos: ahora tambien motivos de devolucion ──
+// Trae TODAS las filas paginando (Supabase corta en 1000 por consulta aunque se pida .limit(5000)).
+// mk(from,to) debe devolver la consulta con .range(from,to) ya aplicado y un orden estable.
+async function sgnFetchAll(mk){
+  var out=[],off=0;
+  while(true){
+    var r=await mk(off,off+999);
+    if(r.error)return {error:r.error,data:out};
+    var d=r.data||[];out=out.concat(d);
+    if(d.length<1000)break;
+    off+=1000;if(out.length>100000)break;
+  }
+  return {error:null,data:out};
+}
+// Excluye las novedades de tiendas pausadas (retiradas de Fenix)
+function sgnSoloTiendasActivas(list){
+  var p={};(SGN.stores||[]).forEach(function(s){if(s.active===false){p['i'+s.id]=1;p['n'+s.store_name]=1;}});
+  return list.filter(function(n){return !(p['i'+n.store_id]||p['n'+n.store_name]);});
+}
 sgnLoadData = async function(){
   var r1 = await SGN.client.from('stores').select('*').order('store_name').limit(2000);
-  var r2 = await SGN.client.from('novedades').select('*').neq('estado_local','cerrada_broker').limit(5000);
+  var r2 = await sgnFetchAll(function(a,b){return SGN.client.from('novedades').select('*').neq('estado_local','cerrada_broker').order('order_id').range(a,b);});
   if(!r1.error) SGN.stores = r1.data || [];
   if(!r2.error) SGN.novedades = r2.data || [];
   if(!SGN.motivos.length){
@@ -2791,8 +2810,8 @@ sgnRenderInicio = async function(){
   el.innerHTML='<div class="pt">Inicio</div><div class="ps">Resumen del dia &middot; '+new Date().toLocaleDateString('es-CO',{weekday:'long',day:'2-digit',month:'long'})+'</div><div id="ini-body"><p class="ps">Cargando indicadores...</p></div>';
   var now=Date.now(),DAY=864e5;function iso(d){return d.toISOString().slice(0,10);}
   var hoy=iso(new Date(now-5*3600e3)); // dia de hoy en Colombia (UTC-5), no UTC
-  var nv=await SGN.client.from('novedades').select('store_id,store_name,estado_local,broker_created_at,intentos').in('estado_local',['pendiente','en_revision','cas_abierto']).limit(20000);
-  var novs=nv.data||[];var activas=novs.length;
+  var nv=await sgnFetchAll(function(a,b){return SGN.client.from('novedades').select('store_id,store_name,estado_local,broker_created_at,intentos').in('estado_local',['pendiente','en_revision','cas_abierto']).order('order_id').range(a,b);});
+  var novs=sgnSoloTiendasActivas(nv.data||[]);var activas=novs.length;
   var rojas={},rojasId={},rojo=0;
   novs.forEach(function(n){var d=n.broker_created_at?Math.floor((now-new Date(n.broker_created_at).getTime())/DAY):0;if(d>=7){rojo++;rojas[n.store_name]=(rojas[n.store_name]||0)+1;if(n.store_id)rojasId[n.store_name]=n.store_id;}});
   var topRojas=Object.keys(rojas).map(function(k){return [k,rojas[k]];}).sort(function(a,b){return b[1]-a[1];}).slice(0,8);
@@ -2981,8 +3000,8 @@ sgnRepRedescargar = async function(id){
 sgnRenderCal = async function(){
   var el=document.getElementById('pcal');if(!el)return;
   el.innerHTML='<div class="pt">&#x1F4C5; Calendario</div><div class="ps">Resumen real de novedades y gestiones</div><div id="cal-body"><p class="ps">Cargando datos reales...</p></div>';
-  var nv=await SGN.client.from('novedades').select('store_id,store_name,estado_local,broker_created_at').in('estado_local',['pendiente','en_revision','cas_abierto']).limit(8000);
-  var novs=nv.data||[];var now=Date.now();var DAY=864e5;
+  var nv=await sgnFetchAll(function(a,b){return SGN.client.from('novedades').select('store_id,store_name,estado_local,broker_created_at').in('estado_local',['pendiente','en_revision','cas_abierto']).order('order_id').range(a,b);});
+  var novs=sgnSoloTiendasActivas(nv.data||[]);var now=Date.now();var DAY=864e5;
   var v=0,a=0,r=0;
   // Info por tienda con novedades activas
   var stInfo={}; // store_name -> {id,count,oldest}
@@ -3075,6 +3094,41 @@ function sgnTdComments(){
   crumb.parentNode.insertBefore(div,crumb.nextSibling);
 }
 
+// ── PAUSAR / REACTIVAR tienda (se retiro de Fenix) ──
+async function sgnStorePausa(id,activar){
+  var st=null;(SGN.stores||[]).forEach(function(s){if(s.id===id)st=s;});if(!st)return;
+  var msg=activar?'¿Reactivar la tienda "'+st.store_name+'"? Volvera a aparecer en el panel.'
+    :'¿Pausar la tienda "'+st.store_name+'"?\n\nDejara de aparecer en el panel, los conteos, Inicio y Calendario. No se borra nada y puedes reactivarla desde el filtro "Pausada".';
+  if(!confirm(msg))return;
+  var r=await SGN.client.from('stores').update({active:!!activar}).eq('id',id);
+  if(r.error){alert('No se pudo cambiar el estado de la tienda: '+r.error.message);return;}
+  st.active=!!activar;
+  if(typeof sgnBuildTiendas==='function')sgnBuildTiendas();
+  filterTiendas();
+}
+// ── DESCARGAR todas las novedades activas (CSV para Excel) ──
+async function sgnExportNovedades(btn){
+  var lbl=btn?btn.innerHTML:'';
+  if(btn){btn.disabled=true;btn.textContent='Preparando...';}
+  try{
+    var r=await sgnFetchAll(function(a,b){return SGN.client.from('novedades').select('order_id,store_name,country,tipo_novedad,broker_created_at,estado_local,guia_envio,transportadora').neq('estado_local','cerrada_broker').order('order_id').range(a,b);});
+    if(r.error){alert('No se pudo descargar: '+r.error.message);return;}
+    var pausadas={};(SGN.stores||[]).forEach(function(s){if(s.active===false)pausadas[s.store_name]=1;});
+    function fecha(v){if(!v)return '';try{return new Date(v).toLocaleString('sv-SE',{timeZone:'America/Bogota'});}catch(e){return String(v);}}
+    function q(v){v=String(v==null?'':v).replace(/"/g,'""');return '"'+v+'"';}
+    var ESTADOS={pendiente:'Pendiente',en_revision:'En revision',cas_abierto:'CAS abierto',resuelta:'Resuelta',descartada:'Descartada'};
+    var lines=['sep=;',['ID orden','Tienda','Pais','Motivo','Fecha novedad (hora Colombia)','Estado en SGN','Guia','Transportadora','Tienda pausada'].map(q).join(';')];
+    r.data.forEach(function(n){
+      lines.push([n.order_id,n.store_name,n.country,n.tipo_novedad,fecha(n.broker_created_at),ESTADOS[n.estado_local]||n.estado_local,n.guia_envio,n.transportadora,pausadas[n.store_name]?'Si':''].map(q).join(';'));
+    });
+    var blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
+    var a=document.createElement('a');a.href=URL.createObjectURL(blob);
+    a.download='novedades_SGN_'+new Date().toISOString().slice(0,10)+'.csv';
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    setTimeout(function(){URL.revokeObjectURL(a.href);},2000);
+  }finally{if(btn){btn.disabled=false;btn.innerHTML=lbl;}}
+}
+
 // ── tiendas: boton Analizar para supervisores/admin ──
 function goAnl(id){SGN.curStoreId=id;goPage('anl');}
 filterTiendas = function(){
@@ -3083,7 +3137,12 @@ filterTiendas = function(){
   var tipo=document.getElementById('tf-tipo')?document.getElementById('tf-tipo').value:'';
   var pais=document.getElementById('tf-pais')?document.getElementById('tf-pais').value:'';
   var isAg=role==='ag';
+  var verPausadas=(estado==='Pausada');
+  var nPausadas=TIENDAS.filter(function(t){return t.act===false;}).length;
+  var activasList=TIENDAS.filter(function(t){return t.act!==false;});
   var filtered=TIENDAS.filter(function(t){
+    if(verPausadas){if(t.act!==false)return false;}
+    else if(t.act===false)return false;
     if(buscar&&t.n.toLowerCase().indexOf(buscar)===-1)return false;
     if(estado==='Urgente'&&!t.urg)return false;
     if(estado==='Pendiente'&&t.est!=='Pendiente')return false;
@@ -3104,9 +3163,10 @@ filterTiendas = function(){
     var nH2=filtered.filter(function(t){return t.hist2;}).length;
     var nAlDia=filtered.filter(function(t){return t.est==='Al dia';}).length;
     var hayFiltro=pais||estado||tipo||buscar;
-    var filLabel=filtered.length<TIENDAS.length?' <span style="font-size:10px;color:var(--t3)">de '+TIENDAS.length+'</span>':'';
+    var baseN=verPausadas?nPausadas:activasList.length;
+    var filLabel=filtered.length<baseN?' <span style="font-size:10px;color:var(--t3)">de '+baseN+'</span>':'';
     stats.innerHTML=
-      '<div class="sc" style="border-top:2px solid var(--navy)"><div class="sn">'+filtered.length+filLabel+'</div><div class="sl">Tiendas'+(hayFiltro?' (filtradas)':' activas')+'</div></div>'
+      '<div class="sc" style="border-top:2px solid var(--navy)"><div class="sn">'+filtered.length+filLabel+'</div><div class="sl">Tiendas'+(verPausadas?' pausadas':(hayFiltro?' (filtradas)':' activas'))+'</div></div>'
       +'<div class="sc" style="border-top:2px solid var(--red)"><div class="sn" style="color:var(--red)">'+nUrg+'</div><div class="sl">Urgentes</div></div>'
       +'<div class="sc" style="border-top:2px solid var(--amb)"><div class="sn" style="color:var(--amb)">'+nPen+'</div><div class="sl">Con pendientes</div></div>'
       +'<div class="sc" style="border-top:2px solid var(--gold)"><div class="sn" style="color:var(--gold)">'+nH2+'</div><div class="sl">Con historicas</div></div>'
@@ -3116,7 +3176,8 @@ filterTiendas = function(){
         '<span style="font-size:12px;color:var(--navy);font-weight:600">Novedades pendientes</span>'
         +'<span style="font-size:12.5px;color:var(--t2)">Pendientes: <strong style="color:var(--navy)">'+totalReg+'</strong></span>'
         +'<span style="font-size:12.5px;color:var(--t2)">CAS abiertos: <strong style="color:var(--red)">'+totalCas+'</strong></span>'
-        +'<span style="margin-left:auto;background:var(--navy);color:#fff;font-size:12px;font-weight:600;padding:4px 14px;border-radius:20px">Total: '+totalNov+'</span>';
+        +(isAg?'':'<button class="btn bsm" style="margin-left:auto" title="Descarga todas las novedades activas (ID, tienda, motivo, fecha) para compararlas con Dropi" onclick="sgnExportNovedades(this)">&#x2B07; Descargar novedades</button>')
+        +'<span style="'+(isAg?'margin-left:auto;':'')+'background:var(--navy);color:#fff;font-size:12px;font-weight:600;padding:4px 14px;border-radius:20px">Total: '+totalNov+'</span>';
     }
   }
   var tbody=document.getElementById('ttbody');
@@ -3137,7 +3198,11 @@ filterTiendas = function(){
         ?'<button class="btn bsm" onclick="sgnSMo(\'qu\','+t.id+')">Quitar urg.</button>'
         :'<button class="btn br2 bsm" onclick="sgnSMo(\'mu\','+t.id+')">Urgente</button>';
       btnHtml=urgBtn+btnHtml+'<button class="btn bgo bsm" onclick="goAnl('+t.id+')">Analizar</button>';
+      btnHtml+=(t.act===false
+        ?'<button class="btn bsm" title="Volver a activar esta tienda" onclick="sgnStorePausa('+t.id+',true)">Reactivar</button>'
+        :'<button class="btn bsm" title="Pausar: la tienda deja de aparecer en el panel y en los conteos (p. ej. se retiro de Fenix)" onclick="sgnStorePausa('+t.id+',false)">Pausar</button>');
     }
+    if(t.act===false)rowCls+=' pausada';
     rows+='<tr class="'+rowCls+'">'
       +'<td><div class="tname"><div class="pbar '+pbarCls+'"></div><span class="tntext">'+sgnEsc(t.n)+'</span>'+urgTag+noteTag+'</div></td>'
       +'<td><span class="badge bgr">'+sgnEsc(t.cat)+'</span></td>'
