@@ -2541,8 +2541,8 @@ sgnRenderProd = async function(){
     +'<div id="pr-body"><p class="ps">Cargando metricas reales...</p></div>';
   // Datos compartidos por ambas vistas
   var pr=await SGN.client.from('profiles').select('id,full_name,role,active,metas_dia').eq('role','agente');
-  var agentes=(pr.data||[]).filter(function(a){return a.active!==false;});
-  var rows=[];{var _o=0;while(true){var _g=await SGN.client.from('gestiones').select('agente_id,accion,created_at,order_id,store_name,resolved_in_dropi').gte('created_at',SGN.prodDesde+'T00:00:00-05:00').lte('created_at',SGN.prodHasta+'T23:59:59-05:00').order('created_at',{ascending:false}).range(_o,_o+999);var _d=_g.data||[];rows=rows.concat(_d);if(_d.length<1000)break;_o+=1000;if(rows.length>200000)break;}}
+  var agentes=pr.data||[];
+  var rows=[];{var _o=0;while(true){var _g=await SGN.client.from('gestiones').select('agente_id,accion,created_at,order_id,store_name,resolved_in_dropi').gte('created_at',SGN.prodDesde+'T00:00:00-05:00').lte('created_at',SGN.prodHasta+'T23:59:59-05:00').order('created_at',{ascending:false}).order('id').range(_o,_o+999);var _d=_g.data||[];rows=rows.concat(_d);if(_d.length<1000)break;_o+=1000;if(rows.length>200000)break;}}
   var novList=[];{var _o2=0;while(true){var _n=await SGN.client.from('novedades').select('order_id,store_name,broker_created_at,intentos,estado_local').range(_o2,_o2+999);var _d2=_n.data||[];novList=novList.concat(_d2);if(_d2.length<1000)break;_o2+=1000;if(novList.length>200000)break;}}
   var novMap={};novList.forEach(function(n){novMap[String(n.order_id)]=n;});
   SGN.prodCache={agentes:agentes,rows:rows,novList:novList,novMap:novMap,vw:vw};
@@ -2556,6 +2556,7 @@ sgnMetricasAgenteRefiltrar = function(){
   if(!SGN.prodCache||SGN.prodCache.vw!=='agente'){sgnRenderProd();return;}
   sgnMetricasAgente(SGN.prodCache.agentes,SGN.prodCache.rows,SGN.prodCache.novMap);
 };
+sgnProdModoAg = function(v){SGN.prodModoAg=v;SGN.prodAgentes=[];sgnMetricasAgenteRefiltrar();};
 sgnAgFiltroToggle = function(){SGN.agPanelOpen=!SGN.agPanelOpen;sgnMetricasAgenteRefiltrar();};
 sgnAgFiltroToggleAgente = function(id,checked){
   if(!Array.isArray(SGN.prodAgentes))SGN.prodAgentes=[];
@@ -2587,6 +2588,13 @@ sgnMetricasAgente = function(agentes,rows,novMap){
   var byAg={},gen=nuevo();
   agentes.forEach(function(a){byAg[a.id]=nuevo();});
   rows.forEach(function(r){if(!byAg[r.agente_id])byAg[r.agente_id]=nuevo();acum(byAg[r.agente_id],r);acum(gen,r);});
+  // Filtro de agentes: activos (cuenta activa) | con gestiones en el periodo | todos (incluye inactivos)
+  var modoAg=SGN.prodModoAg||'act';
+  agentes=agentes.filter(function(a){
+    if(modoAg==='act')return a.active!==false;
+    if(modoAg==='gest')return ((byAg[a.id]||{}).total||0)>0;
+    return true;
+  });
   function metaRango(metas){
     metas=Array.isArray(metas)?metas:[280,280,280,280,280,150,0];
     var t=0,dB=new Date(SGN.prodHasta+'T12:00:00');
@@ -2602,7 +2610,7 @@ sgnMetricasAgente = function(agentes,rows,novMap){
   var selAgs=Array.isArray(SGN.prodAgentes)?SGN.prodAgentes:[];
   var agentesMostrar=selAgs.length?agentes.filter(function(a){return selAgs.indexOf(a.id)>-1;}):agentes;
   var genShow=gen;
-  if(selAgs.length&&selAgs.length<agentes.length){
+  {
     genShow=nuevo();
     agentesMostrar.forEach(function(a){
       var b=byAg[a.id]||nuevo();
@@ -2612,7 +2620,7 @@ sgnMetricasAgente = function(agentes,rows,novMap){
       Object.keys(b.reincOrders).forEach(function(k){genShow.reincOrders[k]=1;});
     });
   }
-  var totalGest=0,enMeta=0,superaron=0,debajo=0,trs='',sumaPromIndiv=0;
+  var totalGest=0,enMeta=0,superaron=0,debajo=0,trs='',sumaPromIndiv=0,sumaDias=0;
   agentesMostrar.forEach(function(a){
     var c=byAg[a.id]||nuevo();
     var target=metaRango(a.metas_dia),pct=target?Math.round(c.total/target*100):0;
@@ -2621,15 +2629,17 @@ sgnMetricasAgente = function(agentes,rows,novMap){
     var col=pct>100?'var(--gold)':pct>=80?'var(--grn)':'var(--red)';
     var diasTrab=Object.keys(c.diasSet||{}).length;
     var promDiaNum=diasTrab?(c.total/diasTrab):0;
-    sumaPromIndiv+=promDiaNum;
+    sumaPromIndiv+=promDiaNum;sumaDias+=diasTrab;
     var promDia=promDiaNum.toFixed(1);
     trs+='<tr><td><div style="display:flex;align-items:center;gap:8px"><div class="av avn">'+sgnInitials(a.full_name||'?')+'</div><span style="font-size:12.5px;font-weight:500">'+sgnEsc(a.full_name||'—')+'</span><button class="btn bsm" title="Ver gestiones del agente" style="padding:2px 7px;margin-left:4px" onclick="sgnAgenteDetalle(\''+a.id+'\',\''+sgnEsc((a.full_name||'').replace(/\x27/g,''))+'\')">&#x1F50E;</button></div></td>'
       +'<td><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;height:6px;background:var(--sur2);border-radius:3px;overflow:hidden;max-width:90px"><div style="height:100%;width:'+Math.min(100,pct)+'%;background:'+col+'"></div></div><span style="font-size:12px;color:'+col+';font-weight:600">'+pct+'%</span></div></td>'
       +'<td>'+c.contacto+sgnPctSpan(c.contacto,c.total)+'</td><td>'+c.sin_contacto+sgnPctSpan(c.sin_contacto,c.total)+'</td><td>'+c.devolucion+sgnPctSpan(c.devolucion,c.total)+'</td><td>'+c.cas+sgnPctSpan(c.cas,c.total)+'</td><td>'+c.transportadora+sgnPctSpan(c.transportadora,c.total)+'</td><td>'+c.en_revision+sgnPctSpan(c.en_revision,c.total)+'</td><td><strong>'+c.total+'</strong></td>'
+      +'<td><strong>'+diasTrab+'</strong></td>'
       +'<td title="'+diasTrab+' dia(s) con gestiones">'+promDia+'</td>'
       +'<td>'+sgnTmrFmt(c)+'</td>'+sgnPctCell(sgnPctDropi(c),false)+sgnPctCell(sgnPctReinc(c),true)+'</tr>';
   });
-  if(!trs)trs='<tr><td colspan="13" style="text-align:center;padding:24px;color:var(--t3);font-size:13px">No hay agentes activos o no hay gestiones en este periodo.</td></tr>';
+  if(!trs)trs='<tr><td colspan="14" style="text-align:center;padding:24px;color:var(--t3);font-size:13px">No hay agentes activos o no hay gestiones en este periodo.</td></tr>';
+  var promDiasAg=agentesMostrar.length?(sumaDias/agentesMostrar.length).toFixed(1):'0.0';
   var promEquipo=(totalGest/dias).toFixed(1);
   var promPorAgente=agentesMostrar.length?(sumaPromIndiv/agentesMostrar.length).toFixed(1):'0.0';
   var panelOpen=!!SGN.agPanelOpen;
@@ -2638,16 +2648,18 @@ sgnMetricasAgente = function(agentes,rows,novMap){
   var btnLabel=todosSel?'Todos los agentes':(selAgs.length===1?(function(){var a=null;agentes.forEach(function(x){if(x.id===selAgs[0])a=x;});return a?sgnEsc(a.full_name||'1 agente'):'1 agente';})():selAgs.length+' agentes seleccionados');
   var body=document.getElementById('pr-body');if(!body)return;
   body.innerHTML=
-    '<div style="margin-bottom:12px;position:relative;display:inline-block" id="pr-ag-wrap">'
+    '<div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px"><div style="position:relative" id="pr-ag-wrap">'
     +'<label style="font-size:11px;font-weight:600;color:var(--t2);margin-right:6px;display:block;margin-bottom:4px">Agente:</label>'
     +'<button type="button" class="btn bsm" style="min-width:190px;text-align:left;display:flex;justify-content:space-between;align-items:center;gap:8px" onclick="sgnAgFiltroToggle()">'+btnLabel+' <span style="font-size:10px">&#9662;</span></button>'
     +'<div id="pr-ag-panel" style="display:'+(panelOpen?'block':'none')+';position:absolute;top:100%;left:0;margin-top:4px;background:var(--sur);border:1px solid var(--bdr2);border-radius:var(--rs);box-shadow:0 4px 14px rgba(0,0,0,.18);padding:8px;z-index:50;max-height:260px;overflow:auto;min-width:230px">'
     +'<div style="display:flex;gap:6px;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--bdr)"><button type="button" class="btn bsm" onclick="sgnAgFiltroTodos()">Todos</button><button type="button" class="btn bsm" onclick="sgnAgFiltroLimpiar()">Limpiar</button></div>'
     +agentes.map(function(a){var checked=selAgs.length===0||selAgs.indexOf(a.id)>-1;return '<label style="display:flex;align-items:center;gap:7px;padding:4px 2px;font-size:12.5px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="'+a.id+'" onchange="sgnAgFiltroToggleAgente(\''+a.id+'\',this.checked)"'+(checked?' checked':'')+'> '+sgnEsc(a.full_name||a.id)+'</label>';}).join('')
     +'</div></div>'
+    +'<div><label style="font-size:11px;font-weight:600;color:var(--t2);display:block;margin-bottom:4px">Mostrar:</label><select onchange="sgnProdModoAg(this.value)" style="font-size:12px;padding:6px 10px;border:1px solid var(--bdr2);border-radius:var(--rs);background:var(--sur);color:var(--tx);font-family:inherit"><option value="act"'+(modoAg==='act'?' selected':'')+'>Solo agentes activos</option><option value="gest"'+(modoAg==='gest'?' selected':'')+'>Con gestiones en el periodo</option><option value="all"'+(modoAg==='all'?' selected':'')+'>Todos (incluye inactivos)</option></select></div></div>'
     +'<div class="sg" style="margin-bottom:14px"><div class="sc"><div class="sn">'+totalGest+'</div><div class="sl">Gestiones en periodo</div></div>'
     +'<div class="sc" style="border-top:2px solid var(--navy)"><div class="sn">'+promEquipo+'</div><div class="sl">Promedio gestiones/dia (equipo)</div></div>'
     +'<div class="sc" style="border-top:2px solid var(--navy)"><div class="sn">'+promPorAgente+'</div><div class="sl">Promedio gestiones/dia por agente</div></div>'
+    +'<div class="sc" style="border-top:2px solid var(--navy)"><div class="sn">'+promDiasAg+'</div><div class="sl">Dias gestionados (promedio por agente) de '+dias+'</div></div>'
     +'<div class="sc" style="border-top:2px solid var(--grn)"><div class="sn" style="color:var(--grn)">'+enMeta+'</div><div class="sl">En meta</div></div>'
     +'<div class="sc" style="border-top:2px solid var(--gold)"><div class="sn" style="color:var(--gold)">'+superaron+'</div><div class="sl">Superaron meta</div></div>'
     +'<div class="sc" style="border-top:2px solid var(--red)"><div class="sn" style="color:var(--red)">'+debajo+'</div><div class="sl">Por debajo</div></div></div>'
@@ -2658,8 +2670,8 @@ sgnMetricasAgente = function(agentes,rows,novMap){
     +'<div style="display:flex;gap:10px;flex-wrap:wrap">'
     +[['contacto','Contacto'],['sin_contacto','Sin contacto'],['devolucion','Devolver'],['cas','CAS'],['transportadora','Transportadora'],['en_revision','En revision']].map(function(p){var v=genShow[p[0]],pc=genShow.total?Math.round(v/genShow.total*100):0;return '<div style="flex:1;min-width:115px;background:var(--sur2);border-radius:var(--rs);padding:10px 12px"><div style="font-size:18px;font-weight:700;color:var(--tx)">'+v+'</div><div style="font-size:11px;color:var(--t2)">'+p[1]+' <span style="color:var(--t3)">('+pc+'%)</span></div></div>';}).join('')
     +'</div></div>'
-    +'<div class="card"><div class="tw"><table><thead><tr><th>Agente</th><th>Progreso</th><th>Contacto</th><th>Sin contacto</th><th>Devolver</th><th>CAS</th><th>Transp.</th><th>En revision</th><th>Total</th><th>Prom/dia</th><th>TMR</th><th>% Dropi 1er</th><th>% Reinc.</th></tr></thead><tbody>'+trs+'</tbody></table></div></div>'
-    +'<p class="ps" style="margin-top:8px;font-size:11px">TMR: promedio desde que la novedad aparece hasta que se gestiona &middot; % Dropi 1er: efectividad del resolve en Dropi &middot; % Reinc.: ordenes que requirieron 2+ intentos (calculado sobre las ordenes gestionadas por cada agente) &middot; Prom/dia (columna): gestiones del agente / solo los dias en que ese agente gestiono (no cuenta dias sin actividad) &middot; Promedio por agente (tarjeta): promedio de esos promedios individuales &middot; Promedio equipo (tarjeta): total del periodo / dias calendario del periodo.</p>';
+    +'<div class="card"><div class="tw"><table><thead><tr><th>Agente</th><th>Progreso</th><th>Contacto</th><th>Sin contacto</th><th>Devolver</th><th>CAS</th><th>Transp.</th><th>En revision</th><th>Total</th><th>Dias gestiono</th><th>Prom/dia</th><th>TMR</th><th>% Dropi 1er</th><th>% Reinc.</th></tr></thead><tbody>'+trs+'</tbody></table></div></div>'
+    +'<p class="ps" style="margin-top:8px;font-size:11px">TMR: promedio desde que la novedad aparece hasta que se gestiona &middot; % Dropi 1er: efectividad del resolve en Dropi &middot; % Reinc.: ordenes que requirieron 2+ intentos (calculado sobre las ordenes gestionadas por cada agente) &middot; Dias gestiono: dias distintos del periodo en que el agente registro al menos una gestion (sirve para comparar a quien trabajo mas dias) &middot; Prom/dia (columna): gestiones del agente / solo esos dias &middot; Promedio por agente (tarjeta): promedio de esos promedios individuales &middot; Promedio equipo (tarjeta): total del periodo / dias calendario del periodo.</p>';
 };
 
 sgnMetricasTienda = function(rows,novList,novMap){
@@ -2844,7 +2856,7 @@ sgnRenderInicio = async function(){
   var topRojas=Object.keys(rojas).map(function(k){return [k,rojas[k]];}).sort(function(a,b){return b[1]-a[1];}).slice(0,8);
   var reinc=novs.filter(function(n){return (n.intentos||0)>=2;}).length;var reincPct=activas?Math.round(reinc/activas*100):0;
   var enSeg=novs.filter(function(n){return n.estado_local==='en_revision'||n.estado_local==='cas_abierto';}).length;
-  var g=await SGN.client.from('gestiones').select('resolved_in_dropi').gte('created_at',hoy+'T00:00:00-05:00').lte('created_at',hoy+'T23:59:59-05:00').limit(20000);
+  var g=await sgnFetchAll(function(a,b){return SGN.client.from('gestiones').select('resolved_in_dropi').gte('created_at',hoy+'T00:00:00-05:00').lte('created_at',hoy+'T23:59:59-05:00').order('id').range(a,b);});
   var gh=g.data||[];var gestHoy=gh.length;
   var dN=gh.filter(function(x){return x.resolved_in_dropi===true||x.resolved_in_dropi===false;}).length;
   var dOk=gh.filter(function(x){return x.resolved_in_dropi===true;}).length;var pct1er=dN?Math.round(dOk/dN*100):0;
@@ -2865,9 +2877,76 @@ sgnRenderInicio = async function(){
     +'<div class="sc" style="border-top:2px solid var(--red)"><div class="sn" style="color:var(--red)">'+reincPct+'%</div><div class="sl">Reincidencia (activas)</div></div></div>'
     +'<div class="sg" style="margin-bottom:16px"><div class="sc" style="border-top:2px solid var(--red)"><div class="sn" style="color:var(--red)">'+rojo+'</div><div class="sl">Novedades en rojo (7+ dias)</div></div>'
     +'<div class="sc"><div class="sn">'+topRojas.length+'</div><div class="sl">Tiendas en rojo</div></div>'+'<div class="sc" style="border-top:2px solid var(--amb)"><div class="sn" style="color:var(--amb)">'+enSeg+'</div><div class="sl">En seguimiento (Rev/CAS)</div></div></div>'
+    +'<div class="card cb" id="ini-ing" style="margin-bottom:14px"><p class="ps">Cargando ingreso de novedades...</p></div>'
     +'<div class="card cb" style="margin-bottom:14px"><div style="font-size:13px;font-weight:600;color:var(--tx);margin-bottom:8px;padding-bottom:9px;border-bottom:1px solid var(--bdr)">&#x26A0; Tiendas en rojo (novedades de 7+ dias)</div>'+rojasRows+'</div>'
     +'<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn bp bsm" onclick="goPage(\'tiendas\')">Ir a Tiendas</button><button class="btn bsm" onclick="goPage(\'cal\')">Ver Calendario</button><button class="btn bsm" onclick="goPage(\'prod\')">Ver Metricas</button><button class="btn bsm" onclick="goPage(\'seg\')">Ver Seguimiento</button></div>';
+  sgnIngRender();
 };
+
+// ── Inicio: novedades que ingresan por dia (+ reincidentes) ──
+function sgnIngHoyCO(){return new Date(Date.now()-5*3600e3).toISOString().slice(0,10);}
+function sgnIngRango(n){
+  var hoy=sgnIngHoyCO();SGN.ingHasta=hoy;
+  SGN.ingDesde=new Date(new Date(hoy+'T12:00:00Z').getTime()-(n-1)*864e5).toISOString().slice(0,10);
+  sgnIngRender();
+}
+function sgnIngConsultar(){
+  var d=document.getElementById('ing-desde'),h=document.getElementById('ing-hasta'),t=document.getElementById('ing-tienda'),p=document.getElementById('ing-pais');
+  if(d&&d.value)SGN.ingDesde=d.value;if(h&&h.value)SGN.ingHasta=h.value;
+  SGN.ingTienda=t?t.value:'';SGN.ingPais=p?p.value:'';
+  sgnIngRender();
+}
+async function sgnIngRender(){
+  var box=document.getElementById('ini-ing');if(!box)return;
+  if(!SGN.ingDesde){SGN.ingHasta=sgnIngHoyCO();SGN.ingDesde=new Date(new Date(SGN.ingHasta+'T12:00:00Z').getTime()-6*864e5).toISOString().slice(0,10);}
+  var desde=SGN.ingDesde,hasta=SGN.ingHasta,tienda=SGN.ingTienda||'',pais=SGN.ingPais||'';
+  var r=await sgnFetchAll(function(a,b){
+    var q=SGN.client.from('novedades').select('order_id,store_name,country,broker_created_at,intentos,estado_local')
+      .gte('broker_created_at',desde+'T00:00:00-05:00').lte('broker_created_at',hasta+'T23:59:59-05:00');
+    if(tienda)q=q.eq('store_name',tienda);
+    if(pais)q=q.eq('country',pais);
+    return q.order('order_id').range(a,b);
+  });
+  var box2=document.getElementById('ini-ing');if(!box2)return;
+  var list=sgnSoloTiendasActivas(r.data||[]);
+  var byDay={};
+  list.forEach(function(n){
+    if(!n.broker_created_at)return;
+    var k=new Date(new Date(n.broker_created_at).getTime()-5*3600e3).toISOString().slice(0,10);
+    if(!byDay[k])byDay[k]={tot:0,re:0};
+    byDay[k].tot++;if((n.intentos||0)>=2)byDay[k].re++;
+  });
+  var days=[],t0=new Date(desde+'T12:00:00Z').getTime(),t1=new Date(hasta+'T12:00:00Z').getTime();
+  for(var t=t1;t>=t0&&days.length<400;t-=864e5){var k=new Date(t).toISOString().slice(0,10);days.push({k:k,tot:(byDay[k]||{}).tot||0,re:(byDay[k]||{}).re||0});}
+  var tot=0,re=0,mx=0,pico='—';
+  days.forEach(function(d){tot+=d.tot;re+=d.re;if(d.tot>mx){mx=d.tot;pico=d.k;}});
+  var prom=days.length?(tot/days.length).toFixed(1):'0.0';
+  var pct=tot?Math.round(re/tot*100):0;
+  var inp='font-size:12px;padding:5px 9px;border:1px solid var(--bdr2);border-radius:var(--rs);background:var(--sur);color:var(--tx);font-family:inherit';
+  var tOpts='<option value="">Todas las tiendas</option>'+(SGN.stores||[]).filter(function(s){return s.active!==false;}).map(function(s){return '<option value="'+sgnEsc(s.store_name)+'"'+(tienda===s.store_name?' selected':'')+'>'+sgnEsc(s.store_name)+'</option>';}).join('');
+  var cs={};(SGN.stores||[]).forEach(function(s){if(s.country)cs[s.country]=1;});
+  var pOpts='<option value="">Todos los paises</option>'+Object.keys(cs).sort().map(function(c){return '<option value="'+c+'"'+(pais===c?' selected':'')+'>'+sgnEsc(PAIS_NOMBRE[c]||c)+'</option>';}).join('');
+  var rows=days.map(function(d){
+    var w=mx?Math.round(d.tot/mx*100):0;
+    return '<tr><td>'+d.k+'</td><td><strong>'+d.tot+'</strong></td><td><div style="height:6px;background:var(--sur2);border-radius:3px;overflow:hidden;min-width:80px"><div style="height:100%;width:'+w+'%;background:var(--navy)"></div></div></td><td style="color:var(--red);font-weight:600">'+d.re+'</td><td style="color:var(--t2)">'+(d.tot?Math.round(d.re/d.tot*100)+'%':'—')+'</td></tr>';
+  }).join('');
+  box2.innerHTML=
+    '<div style="font-size:13px;font-weight:600;color:var(--tx);margin-bottom:10px;padding-bottom:9px;border-bottom:1px solid var(--bdr)">&#x1F4E5; Novedades que ingresan por dia</div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">'
+    +'<div><label style="font-size:11px;font-weight:600;color:var(--t2);display:block;margin-bottom:3px">Desde</label><input type="date" id="ing-desde" value="'+desde+'" style="'+inp+'"></div>'
+    +'<div><label style="font-size:11px;font-weight:600;color:var(--t2);display:block;margin-bottom:3px">Hasta</label><input type="date" id="ing-hasta" value="'+hasta+'" style="'+inp+'"></div>'
+    +'<div><label style="font-size:11px;font-weight:600;color:var(--t2);display:block;margin-bottom:3px">Tienda</label><select id="ing-tienda" style="'+inp+';max-width:220px">'+tOpts+'</select></div>'
+    +'<div><label style="font-size:11px;font-weight:600;color:var(--t2);display:block;margin-bottom:3px">Pais</label><select id="ing-pais" style="'+inp+'">'+pOpts+'</select></div>'
+    +'<button class="btn bp bsm" onclick="sgnIngConsultar()">Consultar</button>'
+    +'<button class="btn bsm" onclick="sgnIngRango(1)">Hoy</button><button class="btn bsm" onclick="sgnIngRango(7)">7 dias</button><button class="btn bsm" onclick="sgnIngRango(30)">30 dias</button></div>'
+    +'<div class="sg" style="margin-bottom:12px"><div class="sc" style="border-top:2px solid var(--navy)"><div class="sn">'+tot+'</div><div class="sl">Novedades ingresadas</div></div>'
+    +'<div class="sc"><div class="sn">'+prom+'</div><div class="sl">Promedio por dia</div></div>'
+    +'<div class="sc" style="border-top:2px solid var(--red)"><div class="sn" style="color:var(--red)">'+re+'</div><div class="sl">Reincidentes</div></div>'
+    +'<div class="sc" style="border-top:2px solid var(--red)"><div class="sn" style="color:var(--red)">'+pct+'%</div><div class="sl">% reincidencia</div></div>'
+    +'<div class="sc"><div class="sn" style="font-size:16px">'+pico+'</div><div class="sl">Dia con mas ingresos ('+mx+')</div></div></div>'
+    +'<div class="tw" style="max-height:300px;overflow:auto"><table><thead><tr><th>Dia</th><th>Ingresadas</th><th></th><th>Reincidentes</th><th>%</th></tr></thead><tbody>'+(rows||'<tr><td colspan="5" style="text-align:center;padding:18px;color:var(--t3)">Sin datos en el periodo.</td></tr>')+'</tbody></table></div>'
+    +'<p class="ps" style="margin-top:8px;font-size:11px">Ingresadas = novedades creadas en Dropi ese dia (hora Colombia), incluye las ya cerradas. Reincidentes = novedades que un agente ya gestiono antes y volvieron (2+ intentos). No incluye tiendas pausadas.</p>';
+}
 
 
 // ── Panel REPORTES (real, genera Excel con SheetJS) ──
